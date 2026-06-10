@@ -26,34 +26,38 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-
-/********************************************************************************************
- *  \file       debug_utils.hpp
- *  \brief      An state estimation server for AeroStack2
- *  \authors    David Pérez Saura
- *              Miguel Fernández Cortizas
+/**
+ * @file semantic_slam_node.cpp
  *
- *  \copyright  Copyright (c) 2024 Universidad Politécnica de Madrid
- *              All Rights Reserved
- ********************************************************************************/
-
-#ifndef UTILS__DEBUG_UTILS_HPP_
-#define UTILS__DEBUG_UTILS_HPP_
+ * An slam node implementation for AeroStack2
+ *
+ * @author David Pérez Saura
+ *         Miguel Fernández Cortizas
+ */
 
 #include <memory>
-#include "as2_slam/graph_g2o.hpp"
+#include <rclcpp/executors.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include "dual_pose_graph/semantic_slam.hpp"
 
-#define DEBUG_START_TIMER // auto start_time = std::chrono::high_resolution_clock::now();
-#define DEBUG_LOG_DURATION_GRAPH // auto end_time = std::chrono::high_resolution_clock::now(); \
-  auto duration = \
-    std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count(); \
-  DEBUG_GRAPH(__func__ << " : " << duration << " ms");
-#define DEBUG_LOG_DURATION // auto end_time = std::chrono::high_resolution_clock::now(); \
-  auto duration = \
-    std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count(); \
-  DEBUG(__func__ << " : " << duration << " ms");
+int main(int argc, char ** argv)
+{
+  rclcpp::NodeOptions modified_options;
+  modified_options.allow_undeclared_parameters(true);
+  modified_options.automatically_declare_parameters_from_overrides(true);
 
-void debugGraphVertices(std::shared_ptr<GraphG2O> _graph);
-void debugComputeCovariance(const g2o::SparseBlockMatrix<Eigen::MatrixXd> & _spinv, int _node_id);
-
-#endif  // UTILS__DEBUG_UTILS_HPP_
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared<SemanticSlam>(modified_options);
+  rclcpp::executors::MultiThreadedExecutor executor;
+  executor.add_callback_group(
+    node->get_tf_callback_group(),
+    node->get_node_base_interface());
+  executor.add_callback_group(
+    node->get_detections_callback_group(),
+    node->get_node_base_interface());
+  // rclcpp::spin(node);
+  executor.add_node(node);
+  executor.spin();
+  rclcpp::shutdown();
+  return 0;
+}

@@ -48,9 +48,10 @@
 
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 
-#include "as2_slam/graph_g2o.hpp"
-#include "as2_slam/object_detection_types.hpp"
+#include "dual_pose_graph/graph_g2o.hpp"
+#include "dual_pose_graph/object_detection_types.hpp"
 #include "utils/conversions.hpp"
 #include "utils/general_utils.hpp"
 
@@ -66,15 +67,20 @@ struct OptimizerG2OParameters
   bool odometry_is_relative;
   bool generate_odom_map_transform;
   bool calculate_odom_covariance_;
+  bool throttle_detections;
+  bool use_dual_graph;
   Eigen::Isometry3d earth_to_map_transform;
   std::vector<FixedObject> fixed_objects;
 };
+
+class CsvLogger;
 
 class OptimizerG2O
 {
 public:
   OptimizerG2O();
   ~OptimizerG2O() {}
+  void setCsvLogger(CsvLogger * logger) { csv_logger_ = logger; }
   std::shared_ptr<GraphG2O> main_graph;
   std::shared_ptr<GraphG2O> temp_graph;
   std::mutex graph_mutex_;
@@ -99,7 +105,11 @@ public:
     const OdometryWithCovariance & _detection_odometry,
     OdometryInfo & _detection_odometry_info);
   bool checkAddingConditions(
-    const OdometryInfo & _odometry, const double distance_threshold);
+    const OdometryInfo & _odometry, const double distance_threshold,
+    const double orientation_threshold = 999.0);
+  bool generateDetectionOdometryInfo(
+    const OdometryWithCovariance & _detection_odometry,
+    OdometryInfo & _detection_odometry_info);
 
 private:
   bool first_odom_ = true;
@@ -126,7 +136,11 @@ private:
   bool odometry_is_relative_ = false;
   bool generate_odom_map_transform_ = false;
   bool calculate_odom_covariance_ = false;
+  bool throttle_detections_ = true;
+  bool use_dual_graph_ = true;
   std::vector<FixedObject> fixed_objects_;
+  std::unordered_set<std::string> detections_since_last_keyframe_;
+  CsvLogger * csv_logger_ = nullptr;
 };
 
 #endif  // AS2_SLAM__OPTIMIZER_G2O_HPP_

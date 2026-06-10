@@ -60,8 +60,9 @@
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 
 #include <as2_core/node.hpp>
-#include "as2_slam/optimizer_g2o.hpp"
+#include "dual_pose_graph/optimizer_g2o.hpp"
 #include "utils/conversions.hpp"
+#include "utils/csv_logger.hpp"
 
 class SemanticSlam : public as2::Node
 {
@@ -128,7 +129,8 @@ private:
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
   rclcpp::TimerBase::SharedPtr initial_origin_timer_;
-  std::unique_ptr<OptimizerG2O> optimizer_ptr_;  // g2o graph
+  std::unique_ptr<OptimizerG2O> optimizer_ptr_;
+  std::unique_ptr<CsvLogger> csv_logger_;
 
   OdometryWithCovariance last_odometry_received_;
   geometry_msgs::msg::TransformStamped map_odom_transform_msg_;
@@ -152,6 +154,7 @@ private:
   bool detection_covariance_by_distance2_ = false;
   bool odometry_is_relative_ = false;
   bool generate_odom_map_transform_ = false;
+  bool use_dual_graph_ = true;
   bool visualize_graphs_ = false;
   bool generate_orientation_cov_by_distance_ = false;
 

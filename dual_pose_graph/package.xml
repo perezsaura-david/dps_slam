@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>as2_slam</name>
+  <name>dual_pose_graph</name>
   <version>1.0.6</version>
-  <description>Basic slam for AeroStack2</description>
+  <description>Dual pose graph SLAM for AeroStack2</description>
 
   <maintainer email="cvar.upm3@gmail.com">CVAR-UPM</maintainer>
-  
-  <license>BDS-3-Clause</license>
+
+  <license>BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
@@ -19,18 +19,15 @@
   <depend>visualization_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
+  <depend>pluginlib</depend>
+  <depend>backward_ros</depend>
   <depend>libfmt</depend>
-  <build_depend>g2o</build_depend>
+  <depend>g2o</depend>
+  <depend>ceres</depend>
 
-  <!-- linting test dependencies -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
-  <!--
-  <test_depend>ament_cmake_clang_format</test_depend>
-  <test_depend>ament_cmake_cppcheck</test_depend>
-  <test_depend>ament_cmake_cpplint</test_depend>
-  -->
-  
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

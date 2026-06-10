@@ -1,2 +1,23 @@
+# Build
+build/
+install/
+log/
 .cache/
-build
+
+# Pixi
+.pixi/*
+!.pixi/config.toml
+*.conda
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.pyc

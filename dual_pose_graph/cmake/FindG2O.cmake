@@ -36,6 +36,8 @@ FIND_PATH(G2O_INCLUDE_DIR g2o/core/base_vertex.h
   ${G2O_ROOT}/include
   $ENV{G2O_ROOT}/include
   $ENV{G2O_ROOT}
+  $ENV{PREFIX}/include
+  $ENV{CONDA_PREFIX}/include
   /usr/local/include
   /usr/include
   /opt/local/include
@@ -58,6 +60,8 @@ MACRO(FIND_G2O_LIBRARY MYLIBRARY MYLIBRARYNAME)
     ${G2O_ROOT}/lib
     $ENV{G2O_ROOT}/lib/Debug
     $ENV{G2O_ROOT}/lib
+    $ENV{PREFIX}/lib
+    $ENV{CONDA_PREFIX}/lib
     /opt/ros/$ENV{ROS_DISTRO}/lib
     NO_DEFAULT_PATH
   )
@@ -83,6 +87,8 @@ MACRO(FIND_G2O_LIBRARY MYLIBRARY MYLIBRARYNAME)
     ${G2O_ROOT}/lib
     $ENV{G2O_ROOT}/lib/Release
     $ENV{G2O_ROOT}/lib
+    $ENV{PREFIX}/lib
+    $ENV{CONDA_PREFIX}/lib
     /opt/ros/$ENV{ROS_DISTRO}/lib
     NO_DEFAULT_PATH
   )

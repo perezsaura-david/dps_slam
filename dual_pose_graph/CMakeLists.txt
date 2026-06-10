@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-set(PROJECT_NAME as2_slam)
+set(PROJECT_NAME dual_pose_graph)
 project(${PROJECT_NAME} VERSION 1.0.0)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
@@ -19,6 +19,9 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 set(CMAKE_BUILD_TYPE Release)
 
+
+# Pre-find GeographicLib using CONFIG mode to avoid system FindModule issues
+find_package(GeographicLib CONFIG QUIET)
 
 # find dependencies
 set(PROJECT_DEPENDENCIES
@@ -44,7 +47,8 @@ include_directories(
   include/${PROJECT_NAME}
 )
 
-# G2O
+# G2O (depends on ceres which depends on glog)
+find_package(glog REQUIRED)
 find_package(G2O REQUIRED)
 include_directories(SYSTEM ${G2O_INCLUDE_DIR} ${G2O_INCLUDE_DIRS})
 link_directories(${G2O_LIBRARY_DIRS})
@@ -122,6 +126,7 @@ target_include_directories(${PROJECT_NAME}_node PUBLIC
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(${PROJECT_NAME}_node ${PROJECT_DEPENDENCIES})
 target_link_libraries(${PROJECT_NAME}_node
+                      glog::glog
                       ${G2O_TYPES_DATA}
                       ${G2O_CORE_LIBRARY}
                       ${G2O_STUFF_LIBRARY}

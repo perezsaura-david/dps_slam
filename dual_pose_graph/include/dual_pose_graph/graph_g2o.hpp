@@ -28,7 +28,7 @@
 
 
 /********************************************************************************************
- *  \file       graph_node_types.hpp
+ *  \file       graph_g2o.hpp
  *  \brief      An state estimation server for AeroStack2
  *  \authors    David Pérez Saura
  *              Miguel Fernández Cortizas
@@ -37,26 +37,75 @@
  *              All Rights Reserved
  ********************************************************************************/
 
-#ifndef AS2_SLAM__NODE_BUILDER_HPP_
-#define AS2_SLAM__NODE_BUILDER_HPP_
+#ifndef AS2_SLAM__GRAPH_G2O_HPP_
+#define AS2_SLAM__GRAPH_G2O_HPP_
 
-#include <Eigen/src/Core/Matrix.h>
+#include <g2o/core/optimizable_graph.h>
+#include <g2o/core/sparse_optimizer.h>
+#include <g2o/types/slam3d/types_slam3d.h>
+#include <g2o/types/slam3d/vertex_se3.h>
+#include <memory>
 #include <string>
+#include <vector>
 #include <unordered_map>
-#include "as2_slam/graph_node_types.hpp"
 
-class NodeBuilder
+#include "dual_pose_graph/graph_edge_types.hpp"
+#include "dual_pose_graph/graph_node_types.hpp"
+#include "dual_pose_graph/object_detection_types.hpp"
+#include "utils/general_utils.hpp"
+
+struct ObjectNodeInfo
 {
-  std::unordered_map<std::string, Eigen::Vector4d> colors;
+  ObjectNodeInfo(
+    const std::string & _id,
+    g2o::HyperGraph::Vertex * _node,
+    const Eigen::MatrixXd & _covariance);
+  ~ObjectNodeInfo() {}
 
-  void build(OdomNode * _node)
-  {
-    color = ();
-
-    _node = new OdomNode(id, colors["odom"], flavor);
-  }
-
-  ArucoNode build();
+  std::string object_id;
+  g2o::HyperGraph::Vertex * node;
+  Eigen::MatrixXd covariance;
 };
 
-#endif  // AS2_SLAM__NODE_BUILDER_HPP_
+class GraphG2O
+{
+public:
+  explicit GraphG2O(std::string _name);
+  ~GraphG2O() {}
+
+  std::string getName();
+  std::vector<GraphNode *> getNodes();
+  std::vector<GraphEdge *> getEdges();
+  std::unordered_map<std::string, GraphNode *> getObjectNodes();
+  OdomNode * getLastOdomNode();
+  OdomNode * getMapNode();
+  void setMapNode(OdomNode * _map_node);
+
+  void addNode(GraphNode & _node);
+  void addEdge(GraphEdge & _edge);
+  void addNewKeyframe(
+    const Eigen::Isometry3d & _absolute_pose,
+    const Eigen::Isometry3d & _relative_pose,
+    const Eigen::MatrixXd & _relative_covariance);
+  void addNewObjectDetection(ObjectDetection * _object);
+  Eigen::MatrixXd computeNodeCovariance(GraphNode * _node);
+
+  bool optimizeGraph();
+  void setFixedObjects(const std::vector<FixedObject> & _fixed_objects);
+  void initGraph(const Eigen::Isometry3d & _initial_pose = Eigen::Isometry3d::Identity());
+  std::shared_ptr<g2o::SparseOptimizer> graph_;  // g2o graph
+
+  std::unordered_map<std::string, GraphNode *> obj_id2node_;
+  std::vector<ObjectNodeInfo> obj_nodes_info_;
+
+private:
+  int n_vertices_ = 0;
+  int n_edges_ = 0;
+  std::string name_;
+  OdomNode * last_odom_node_;
+  OdomNode * map_node_;
+  std::vector<GraphNode *> graph_nodes_;
+  std::vector<GraphEdge *> graph_edges_;
+};
+
+#endif  // AS2_SLAM__GRAPH_G2O_HPP_
