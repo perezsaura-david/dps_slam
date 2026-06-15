@@ -44,6 +44,8 @@
 #include "g2o/core/base_binary_edge.h"
 #include "g2o/types/slam3d/vertex_se3.h"
 #include "g2o/types/slam3d/vertex_pointxyz.h"
+#include "g2o/types/slam3d_addons/vertex_plane.h"
+#include "g2o/types/slam3d_addons/plane3d.h"
 
 // Function to compute the skew-symmetric matrix of a 3D vector
 Eigen::Matrix3d skewSymmetric(const Eigen::Vector3d & v);
@@ -122,6 +124,43 @@ public:
     for (int i = 0; i < 3; ++i) {
       os << _measurement[i] << " ";
     }
+    return os.good();
+  }
+};
+
+// Binary edge constraining a robot SE3 pose to a plane landmark.
+// The error is the 3-DOF ominus (azimuth, elevation, distance) between the plane
+// predicted in the robot frame and the measured plane. Jacobians are numeric.
+class EdgeSE3Plane3D : public g2o::BaseBinaryEdge<3, g2o::Plane3D, g2o::VertexSE3,
+    g2o::VertexPlane>
+{
+public:
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+  EdgeSE3Plane3D() {}
+
+  void computeError() override
+  {
+    const g2o::VertexSE3 * se3 = static_cast<const g2o::VertexSE3 *>(_vertices[0]);
+    const g2o::VertexPlane * plane = static_cast<const g2o::VertexPlane *>(_vertices[1]);
+
+    // Predict the plane in the robot frame and compare with the measurement.
+    g2o::Plane3D predicted_plane = se3->estimate().inverse() * plane->estimate();
+    _error = predicted_plane.ominus(_measurement);
+  }
+
+  bool read(std::istream & is) override
+  {
+    Eigen::Vector4d v;
+    for (int i = 0; i < 4; ++i) {is >> v[i];}
+    setMeasurement(g2o::Plane3D(v));
+    return true;
+  }
+
+  bool write(std::ostream & os) const override
+  {
+    Eigen::Vector4d v = _measurement.toVector();
+    for (int i = 0; i < 4; ++i) {os << v[i] << " ";}
     return os.good();
   }
 };

@@ -289,6 +289,10 @@ Eigen::MatrixXd GraphG2O::computeNodeCovariance(GraphNode * _node)
   if (node_point3d) {
     graph_->computeMarginals(spinv, node_point3d);
   }
+  auto node_plane = dynamic_cast<g2o::VertexPlane *>(_node->getVertex());
+  if (node_plane) {
+    graph_->computeMarginals(spinv, node_plane);
+  }
   // WARN_GRAPH("COVARIANCE\n" << spinv);
 
   // ERROR_GRAPH("Computer Marginals");

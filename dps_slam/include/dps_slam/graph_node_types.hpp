@@ -185,6 +185,83 @@ protected:
   Eigen::MatrixXd cov_matrix_;
 };
 
+class GraphNodePlane : public GraphNode
+{
+public:
+  explicit GraphNodePlane(const g2o::Plane3D & _plane)
+  {
+    vertex_ = new g2o::VertexPlane();
+    vertex_->setEstimate(_plane);
+  }
+  ~GraphNodePlane() {}
+
+  g2o::HyperGraph::Vertex * getVertex() override
+  {
+    return static_cast<g2o::HyperGraph::Vertex *>(vertex_);
+  }
+
+  g2o::VertexPlane * getVertexPlane() {return vertex_;}
+
+  visualization_msgs::msg::Marker getVizMarker(const bool _main) override
+  {
+    visualization_msgs::msg::Marker node_marker_msg;
+    node_marker_msg.type = node_marker_msg.CUBE;
+    node_marker_msg.ns = getVizMarkerNamespace();
+    node_marker_msg.id = vertex_->id();
+
+    // Place a thin slab at the plane's closest point to the origin, oriented so
+    // that its local +Z matches the plane normal.
+    g2o::Plane3D plane = vertex_->estimate();
+    Eigen::Vector3d normal = plane.normal();
+    Eigen::Vector3d position = normal * plane.distance();
+    Eigen::Quaterniond orientation =
+      Eigen::Quaterniond::FromTwoVectors(Eigen::Vector3d::UnitZ(), normal);
+    node_marker_msg.pose.position.x = position.x();
+    node_marker_msg.pose.position.y = position.y();
+    node_marker_msg.pose.position.z = position.z();
+    node_marker_msg.pose.orientation.x = orientation.x();
+    node_marker_msg.pose.orientation.y = orientation.y();
+    node_marker_msg.pose.orientation.z = orientation.z();
+    node_marker_msg.pose.orientation.w = orientation.w();
+    node_marker_msg.scale.x = 2.0;
+    node_marker_msg.scale.y = 2.0;
+    node_marker_msg.scale.z = 0.02;
+    Eigen::Vector4d color = getVizMarkerColor(_main);
+    node_marker_msg.color.r = color[0];
+    node_marker_msg.color.g = color[1];
+    node_marker_msg.color.b = color[2];
+    node_marker_msg.color.a = color[3];
+    return node_marker_msg;
+  }
+
+  void setFixed() override {vertex_->setFixed(true);}
+  g2o::Plane3D getPlane() {return vertex_->estimate();}
+  void setCovariance(const Eigen::MatrixXd & _cov_matrix) {cov_matrix_ = _cov_matrix;}
+  Eigen::MatrixXd getCovariance() {return cov_matrix_;}
+
+protected:
+  std::string getNodeName() override {return node_name_;}
+  std::string getVizMarkerNamespace() override
+  {
+    return element_name_ + "/" + getNodeName();
+  }
+  Eigen::Vector4d getVizColor() override {return viz_color_;}
+  Eigen::Vector4d getVizMarkerColor(const bool _main) override
+  {
+    if (_main) {
+      return getVizColor();
+    } else {
+      return getVizColor() * 0.5;
+    }
+  }
+
+  g2o::VertexPlane * vertex_;
+  std::string element_name_ = "node";
+  std::string node_name_ = "Plane";
+  Eigen::Vector4d viz_color_ = {1.0, 0.5, 0.0, 1.0};
+  Eigen::MatrixXd cov_matrix_;
+};
+
 class GraphNodeSE3 : public GraphNode
 {
 public:

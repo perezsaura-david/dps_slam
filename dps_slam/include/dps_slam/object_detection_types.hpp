@@ -205,4 +205,48 @@ public:
   }
 };
 
+class ObjectDetectionPlane : public ObjectDetectionBase
+{
+public:
+  ObjectDetectionPlane(
+    const std::string & _id, const g2o::Plane3D & _plane,
+    const Eigen::MatrixXd & _covariance, const bool _detections_are_absolute)
+  : ObjectDetectionBase(_id, _covariance, _detections_are_absolute), measured_plane_(_plane) {}
+
+  bool prepareMeasurements(const OdometryInfo & _detection_odometry) override
+  {
+    if (detections_are_absolute_) {
+      edge_measurement_ = _detection_odometry.odom_ref.inverse() * measured_plane_;
+      node_estimation_ = measured_plane_;
+    } else {
+      edge_measurement_ = measured_plane_;
+      node_estimation_ = _detection_odometry.map_ref * measured_plane_;
+    }
+    return true;
+  }
+
+  GraphNode * createNode() override
+  {
+    GraphNodePlane * node = new GraphNodePlane(node_estimation_);
+    node->setCovariance(covariance_matrix_);
+    return node;
+  }
+
+  GraphEdge * createEdge(GraphNode * _node, GraphNode * _detection_node) override
+  {
+    GraphNodeSE3 * node_se3 = dynamic_cast<GraphNodeSE3 *>(_node);
+    GraphNodePlane * detection_node_plane = dynamic_cast<GraphNodePlane *>(_detection_node);
+    if (!node_se3) {DEBUG("Reference node is null");}
+    if (!detection_node_plane) {DEBUG("Detection node is null");}
+    return new GraphEdgeSE3Plane(
+      node_se3, detection_node_plane, edge_measurement_,
+      information_matrix_);
+  }
+
+protected:
+  g2o::Plane3D measured_plane_;
+  g2o::Plane3D node_estimation_;
+  g2o::Plane3D edge_measurement_;
+};
+
 #endif  // AS2_SLAM__OBJECTS_TYPES_HPP_

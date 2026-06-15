@@ -347,8 +347,13 @@ void SemanticSlam::detectionsCallback(
       case dps_slam_msgs::msg::Geometry::POINT:
         processPointDetection(detection, msg->header, detection_odometry_info);
         break;
-      case dps_slam_msgs::msg::Geometry::VECTOR:
       case dps_slam_msgs::msg::Geometry::PLANE:
+        processPlaneDetection(detection, msg->header, detection_odometry_info);
+        break;
+      case dps_slam_msgs::msg::Geometry::LINE:
+        processLineDetection(detection, msg->header, detection_odometry_info);
+        break;
+      case dps_slam_msgs::msg::Geometry::VECTOR:
       case dps_slam_msgs::msg::Geometry::CYLINDER:
         WARN("Detection geometry not yet supported by the backend: "
           << static_cast<int>(detection.geometry.type));
@@ -374,15 +379,24 @@ void SemanticSlam::processPointDetection(
 {
   std::string point_id = _msg.id;
   std::string object_type = _msg.label.empty() ? force_object_type_ : _msg.label;
-  Eigen::Vector3d point_position = generatePoseFromMsg(_msg.geometry.pose, _header).translation();
-  Eigen::Matrix<double, 3, 3> point_covariance = Eigen::MatrixXd::Identity(3, 3) * detection_covariance_factor_;
-  if (detection_covariance_by_distance_) {
+  geometry_msgs::msg::Pose point_pose;
+  point_pose.position = _msg.geometry.point.point;
+  point_pose.orientation.w = 1.0;  // identity orientation
+  Eigen::Vector3d point_position = generatePoseFromMsg(point_pose, _header).translation();
+  Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> msg_covariance(
+    _msg.geometry.point.covariance.data());
+  Eigen::Matrix<double, 3, 3> point_covariance;
+  if (!msg_covariance.isZero()) {
+    // Use the covariance provided by the detector.
+    point_covariance = msg_covariance;
+  } else if (detection_covariance_by_distance_) {
     double distance = point_position.norm();
     point_covariance = Eigen::MatrixXd::Identity(3, 3) * distance;
-  }
-  else if (detection_covariance_by_distance2_) {
+  } else if (detection_covariance_by_distance2_) {
     double distance = point_position.norm();
     point_covariance = Eigen::MatrixXd::Identity(3, 3) * distance * distance;
+  } else {
+    point_covariance = Eigen::MatrixXd::Identity(3, 3) * detection_covariance_factor_;
   }
 
   bool detections_are_absolute = false;
@@ -414,30 +428,36 @@ void SemanticSlam::processPoseDetection(
 {
   std::string pose_id = _msg.id;
   std::string object_type = _msg.label.empty() ? force_object_type_ : _msg.label;
-  Eigen::Isometry3d pose = generatePoseFromMsg(_msg.geometry.pose, _header);
-  Eigen::Matrix<double, 6, 6> pose_covariance = Eigen::MatrixXd::Identity(6, 6) * detection_covariance_factor_;
-  if (detection_covariance_by_distance_) {
-    double distance = pose.translation().norm();
-    pose_covariance = pose_covariance * distance;
-  }
-  if (detection_covariance_by_distance2_) {
-    double distance = pose.translation().norm();
-    pose_covariance = pose_covariance * distance * distance;
-  }
-  pose_covariance(3, 3) *= detection_orientation_covariance_factor_;
-  pose_covariance(4, 4) *= detection_orientation_covariance_factor_;
-  pose_covariance(5, 5) *= detection_orientation_covariance_factor_;
-  // calculate distance
-  if (generate_orientation_cov_by_distance_) {
-    float distance = pose.translation().norm();
-    if (distance > distance_for_orientation_covariance_increment_) {
-      // ERROR("Increasing orientation covariance");
-      pose_covariance(3, 3) *= detection_orientation_covariance_large_factor_;
-      pose_covariance(4, 4) *= detection_orientation_covariance_large_factor_;
-      pose_covariance(5, 5) *= detection_orientation_covariance_large_factor_;
+  Eigen::Isometry3d pose = generatePoseFromMsg(_msg.geometry.pose.pose, _header);
+  Eigen::Map<const Eigen::Matrix<double, 6, 6, Eigen::RowMajor>> msg_covariance(
+    _msg.geometry.pose.covariance.data());
+  Eigen::Matrix<double, 6, 6> pose_covariance;
+  if (!msg_covariance.isZero()) {
+    // Use the 6x6 covariance provided by the detector.
+    pose_covariance = msg_covariance;
+  } else {
+    // Fall back to parameter-based covariance synthesis.
+    pose_covariance = Eigen::MatrixXd::Identity(6, 6) * detection_covariance_factor_;
+    if (detection_covariance_by_distance_) {
+      double distance = pose.translation().norm();
+      pose_covariance = pose_covariance * distance;
+    }
+    if (detection_covariance_by_distance2_) {
+      double distance = pose.translation().norm();
+      pose_covariance = pose_covariance * distance * distance;
+    }
+    pose_covariance(3, 3) *= detection_orientation_covariance_factor_;
+    pose_covariance(4, 4) *= detection_orientation_covariance_factor_;
+    pose_covariance(5, 5) *= detection_orientation_covariance_factor_;
+    if (generate_orientation_cov_by_distance_) {
+      float distance = pose.translation().norm();
+      if (distance > distance_for_orientation_covariance_increment_) {
+        pose_covariance(3, 3) *= detection_orientation_covariance_large_factor_;
+        pose_covariance(4, 4) *= detection_orientation_covariance_large_factor_;
+        pose_covariance(5, 5) *= detection_orientation_covariance_large_factor_;
+      }
     }
   }
-  // WARN(pose_covariance);
 
   bool detections_are_absolute = false;
 
@@ -459,6 +479,117 @@ void SemanticSlam::processPoseDetection(
   }
 
   optimizer_ptr_->handleNewObjectDetection(pose_object, _detection_odometry_info);
+}
+
+void SemanticSlam::processPlaneDetection(
+  const dps_slam_msgs::msg::DetectionWithID _msg,
+  const std_msgs::msg::Header _header,
+  const OdometryInfo _detection_odometry_info)
+{
+  std::string plane_id = _msg.id;
+  std::string object_type = _msg.label.empty() ? force_object_type_ : _msg.label;
+  if (object_type.empty()) {
+    ERROR("Plane detection without object label and no force_object_type set");
+    return;
+  }
+
+  // Plane coefficients (ax + by + cz + d = 0) given in the detection frame.
+  const auto & coef = _msg.geometry.plane.plane.coef;
+  g2o::Plane3D plane(Eigen::Vector4d(coef[0], coef[1], coef[2], coef[3]));
+
+  // Transform the plane into the robot frame if it arrives in another frame.
+  std::string ref_frame = _header.frame_id;
+  if (!ref_frame.empty() && ref_frame != robot_frame_) {
+    std::chrono::nanoseconds tf_timeout =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(1.0));
+    try {
+      auto ref_to_robot =
+        tf_buffer_->lookupTransform(robot_frame_, ref_frame, _header.stamp, tf_timeout);
+      plane = convertToIsometry3d(ref_to_robot.transform) * plane;
+    } catch (const tf2::TransformException & ex) {
+      RCLCPP_INFO(
+        this->get_logger(), "Could not transform %s to %s: %s", ref_frame.c_str(),
+        robot_frame_.c_str(), ex.what());
+    }
+  }
+
+  // Covariance over the 3 minimal plane DOF (azimuth, elevation, distance).
+  Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> msg_covariance(
+    _msg.geometry.plane.covariance.data());
+  Eigen::Matrix<double, 3, 3> plane_covariance;
+  if (!msg_covariance.isZero()) {
+    plane_covariance = msg_covariance;
+  } else {
+    plane_covariance = Eigen::MatrixXd::Identity(3, 3) * detection_covariance_factor_;
+  }
+
+  bool detections_are_absolute = false;
+
+  // The concrete detection type depends on the object type (label), not the geometry.
+  ObjectDetection * plane_object = new ObjectDetectionPlane(
+    plane_id, plane, plane_covariance, detections_are_absolute);
+
+  optimizer_ptr_->handleNewObjectDetection(plane_object, _detection_odometry_info);
+}
+
+void SemanticSlam::processLineDetection(
+  const dps_slam_msgs::msg::DetectionWithID _msg,
+  const std_msgs::msg::Header _header,
+  const OdometryInfo _detection_odometry_info)
+{
+  std::string line_id = _msg.id;
+  std::string object_type = _msg.label.empty() ? force_object_type_ : _msg.label;
+  if (object_type.empty()) {
+    ERROR("Line detection without object label and no force_object_type set");
+    return;
+  }
+
+  // Embed the 2D line (normal . x = distance) as a 3D vertical plane:
+  // normal (nx, ny, 0), same signed distance -> Plane3D coef (nx, ny, 0, -distance).
+  const auto & n = _msg.geometry.line.normal;
+  double distance = _msg.geometry.line.distance;
+  g2o::Plane3D plane(Eigen::Vector4d(n.x, n.y, n.z, -distance));
+
+  // Transform the plane into the robot frame if it arrives in another frame.
+  std::string ref_frame = _header.frame_id;
+  if (!ref_frame.empty() && ref_frame != robot_frame_) {
+    std::chrono::nanoseconds tf_timeout =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(1.0));
+    try {
+      auto ref_to_robot =
+        tf_buffer_->lookupTransform(robot_frame_, ref_frame, _header.stamp, tf_timeout);
+      plane = convertToIsometry3d(ref_to_robot.transform) * plane;
+    } catch (const tf2::TransformException & ex) {
+      RCLCPP_INFO(
+        this->get_logger(), "Could not transform %s to %s: %s", ref_frame.c_str(),
+        robot_frame_.c_str(), ex.what());
+    }
+  }
+
+  // Map the line's 2x2 covariance [theta, distance] into the plane's 3x3
+  // [azimuth, elevation, distance]: theta -> azimuth, distance -> distance,
+  // and tightly constrain elevation to assert the plane is vertical.
+  Eigen::Map<const Eigen::Matrix<double, 2, 2, Eigen::RowMajor>> line_covariance(
+    _msg.geometry.line.covariance.data());
+  Eigen::Matrix<double, 3, 3> plane_covariance = Eigen::Matrix3d::Zero();
+  if (!line_covariance.isZero()) {
+    plane_covariance(0, 0) = line_covariance(0, 0);
+    plane_covariance(0, 2) = line_covariance(0, 1);
+    plane_covariance(2, 0) = line_covariance(1, 0);
+    plane_covariance(2, 2) = line_covariance(1, 1);
+  } else {
+    plane_covariance(0, 0) = detection_covariance_factor_;
+    plane_covariance(2, 2) = detection_covariance_factor_;
+  }
+  plane_covariance(1, 1) = 1e-6;  // elevation: assert verticality
+
+  bool detections_are_absolute = false;
+
+  // Reuses the plane backend: the line is stored as a vertical Plane3D landmark.
+  ObjectDetection * line_object = new ObjectDetectionPlane(
+    line_id, plane, plane_covariance, detections_are_absolute);
+
+  optimizer_ptr_->handleNewObjectDetection(line_object, _detection_odometry_info);
 }
 
 void SemanticSlam::updateMapOdomTransform(const std_msgs::msg::Header & _header)
