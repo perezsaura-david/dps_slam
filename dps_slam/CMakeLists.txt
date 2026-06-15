@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-set(PROJECT_NAME dual_pose_graph)
+set(PROJECT_NAME dps_slam)
 project(${PROJECT_NAME} VERSION 1.0.0)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
@@ -29,8 +29,10 @@ set(PROJECT_DEPENDENCIES
   rclcpp
   pluginlib
   as2_core
+  dps_slam_msgs
   nav_msgs
   geometry_msgs
+  shape_msgs
   visualization_msgs
   tf2
   tf2_ros

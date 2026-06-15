@@ -50,8 +50,8 @@
 #include <mutex>
 #include <unordered_set>
 
-#include "dual_pose_graph/graph_g2o.hpp"
-#include "dual_pose_graph/object_detection_types.hpp"
+#include "dps_slam/graph_g2o.hpp"
+#include "dps_slam/object_detection_types.hpp"
 #include "utils/conversions.hpp"
 #include "utils/general_utils.hpp"
 

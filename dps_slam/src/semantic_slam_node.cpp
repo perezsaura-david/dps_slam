@@ -38,7 +38,7 @@
 #include <memory>
 #include <rclcpp/executors.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include "dual_pose_graph/semantic_slam.hpp"
+#include "dps_slam/semantic_slam.hpp"
 
 int main(int argc, char ** argv)
 {

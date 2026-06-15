@@ -29,7 +29,7 @@
 INCLUDE(FindPackageHandleStandardArgs)
 
 # Set the G2O root directory
-SET(G2O_ROOT /home/cvar/aerostack2_ws/install/g2o)
+SET(G2O_ROOT /root/workspace/install/g2o)
 
 # Find the header files
 FIND_PATH(G2O_INCLUDE_DIR g2o/core/base_vertex.h

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>dual_pose_graph</name>
+  <name>dps_slam</name>
   <version>1.0.6</version>
   <description>Dual pose graph SLAM for AeroStack2</description>
 
@@ -14,8 +14,10 @@
   <depend>ament_cmake</depend>
   <depend>rclcpp</depend>
   <depend>as2_core</depend>
+  <depend>dps_slam_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>shape_msgs</depend>
   <depend>visualization_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>

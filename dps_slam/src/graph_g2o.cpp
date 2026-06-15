@@ -35,7 +35,7 @@
  *         Miguel Fernández Cortizas
  */
 
-#include "dual_pose_graph/graph_g2o.hpp"
+#include "dps_slam/graph_g2o.hpp"
 
 #include <Eigen/src/Core/Matrix.h>
 #include <Eigen/src/Core/util/IndexedViewHelper.h>
@@ -50,9 +50,9 @@
 #include <unordered_map>
 #include <iostream>
 
-#include "dual_pose_graph/graph_edge_types.hpp"
-#include "dual_pose_graph/graph_node_types.hpp"
-#include "dual_pose_graph/object_detection_types.hpp"
+#include "dps_slam/graph_edge_types.hpp"
+#include "dps_slam/graph_node_types.hpp"
+#include "dps_slam/object_detection_types.hpp"
 #include "utils/conversions.hpp"
 #include "utils/general_utils.hpp"
 #include "utils/debug_utils.hpp"

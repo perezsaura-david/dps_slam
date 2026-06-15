@@ -11,7 +11,7 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    package_folder = get_package_share_directory('dual_pose_graph')
+    package_folder = get_package_share_directory('dps_slam')
     config_file = os.path.join(package_folder, 'config', 'config.yaml')
 
     namespace_arg = DeclareLaunchArgument(
@@ -22,10 +22,10 @@ def generate_launch_description():
         'config_file', config_file, description='Configuration file')
 
     node = Node(
-        package='dual_pose_graph',
+        package='dps_slam',
         namespace=LaunchConfiguration('namespace'),
-        executable='dual_pose_graph_node',
-        name='dual_pose_graph_node',
+        executable='dps_slam_node',
+        name='dps_slam_node',
         output='screen',
         parameters=[
             {'use_sim_time': LaunchConfiguration('use_sim_time')},

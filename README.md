@@ -13,6 +13,11 @@ Semantic SLAM system for the [AeroStack2][aerostack2] UAV framework. It fuses od
 
 ## Installation
 
+Pick one of the two alternatives below.
+
+<details open>
+<summary><b>🅐 pixi</b> — conda-based, one command</summary>
+
 Requires [pixi][pixi].
 
 ```bash
@@ -24,22 +29,35 @@ pixi install
 This resolves all dependencies (ROS2, G2O, Eigen3, AeroStack2) through conda channels into the
 default (Humble) environment.
 
+</details>
+
+<details>
+<summary><b>🅑 Docker</b> — ROS 2 Humble container + colcon workspace</summary>
+
+A ready-made container that assembles this package together with `dps_slam_msgs` and g2o into a
+ROS 2 Humble + Gazebo Harmonic colcon workspace lives in a dedicated repo:
+**[dps_slam_docker](https://github.com/perezsaura-david/dps_slam_docker)**. It ships the
+`dockerfile`, `docker-compose.yml`, and a `dps_slam.repos` vcstool manifest that pulls all three
+packages (pinned). See that repo's README for the full step-by-step.
+
+</details>
+
 ## Usage
 
 ```bash
 # Launch with default config
-pixi run ros2 launch dual_pose_graph dual_pose_graph.launch.py
+pixi run ros2 launch dps_slam dps_slam.launch.py
 
 # Launch with a specific config and namespace
-pixi run ros2 launch dual_pose_graph dual_pose_graph.launch.py \
+pixi run ros2 launch dps_slam dps_slam.launch.py \
     config_file:=config/config.yaml namespace:=drone1 use_sim_time:=false
 
 # Run the node directly
-pixi run ros2 run dual_pose_graph dual_pose_graph_node \
+pixi run ros2 run dps_slam dps_slam_node \
     --ros-args --params-file config/config.yaml
 
 # Rebuild after code changes
-pixi reinstall ros-humble-dual-pose-graph
+pixi reinstall ros-humble-dps-slam
 ```
 
 ## Configuration
@@ -141,4 +159,5 @@ BSD-3-Clause. See [LICENSE][license].
 [aerostack2]: https://github.com/aerostack2
 [g2o]: https://github.com/RainerKuemmerle/g2o
 [pixi]: https://pixi.sh
+[nvidia-toolkit]: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
 [license]: LICENSE

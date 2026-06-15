@@ -35,7 +35,7 @@
  *         Miguel Fernández Cortizas
  */
 
-#include "dual_pose_graph/semantic_slam.hpp"
+#include "dps_slam/semantic_slam.hpp"
 #include <Eigen/src/Core/Matrix.h>
 #include <Eigen/src/Geometry/Transform.h>
 #include <eigen3/Eigen/src/Geometry/Transform.h>
@@ -48,10 +48,10 @@
 #include <string>
 #include <vector>
 
-#include "dual_pose_graph/graph_node_types.hpp"
+#include "dps_slam/graph_node_types.hpp"
 #include "optimizer_g2o.hpp"
 #include "utils/conversions.hpp"
-#include "dual_pose_graph/object_detection_types.hpp"
+#include "dps_slam/object_detection_types.hpp"
 #include "utils/debug_utils.hpp"
 #include "utils/general_utils.hpp"
 
@@ -141,16 +141,10 @@ SemanticSlam::SemanticSlam(rclcpp::NodeOptions & options)
     rclcpp::CallbackGroupType::MutuallyExclusive);
   rclcpp::SubscriptionOptions det_options;
   det_options.callback_group = detections_callback_group_;
-  detections_sub_ = this->create_subscription<as2_msgs::msg::PoseStampedWithIDArray>(
+  detections_sub_ = this->create_subscription<dps_slam_msgs::msg::DetectionWithIDArray>(
     detections_topic, sensor_qos,
     std::bind(&SemanticSlam::detectionsCallback, this, std::placeholders::_1),
     det_options);
-  // aruco_pose_sub_ = this->create_subscription<as2_msgs::msg::PoseStampedWithID>(
-  //   aruco_pose_topic, sensor_qos,
-  //   std::bind(&SemanticSlam::arucoPoseCallback, this, std::placeholders::_1));
-  // gate_pose_sub_ = this->create_subscription<as2_msgs::msg::PoseStampedWithID>(
-  //   gate_pose_topic, sensor_qos,
-  //   std::bind(&SemanticSlam::gatePoseCallback, this, std::placeholders::_1));
 
   corrected_localization_pub_ =
     this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
@@ -302,21 +296,21 @@ void SemanticSlam::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
 }
 
 void SemanticSlam::detectionsCallback(
-  const as2_msgs::msg::PoseStampedWithIDArray::SharedPtr msg)
+  const dps_slam_msgs::msg::DetectionWithIDArray::SharedPtr msg)
 {
   if (last_odometry_received_.odometry.translation().isZero()) {
     WARN("Detection received before odometry info");
     return;
   }
   // Safely check array size before access
-  if (msg->poses.empty()) {
-      RCLCPP_WARN(this->get_logger(), "Received empty PoseStampedWithIDArray");
+  if (msg->detections.empty()) {
+      RCLCPP_WARN(this->get_logger(), "Received empty DetectionWithIDArray");
       return;
   }
 
   // Lookup transform for baselink in odometry frame at timestamp
   OdometryWithCovariance detection_odometry;
-  auto target_ts = msg->poses.front().pose.header.stamp;
+  auto target_ts = msg->header.stamp;
   std::chrono::nanoseconds tf_timeout =
     std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(1.0));
   try {
@@ -343,24 +337,26 @@ void SemanticSlam::detectionsCallback(
     }
   }
 
-  std::string object_type;
-  if (force_object_type_.empty()) {
-    // FIXME: Create new msg with type
-    // object_type = msg->type;
-    object_type = force_object_type_;
-  } else {
-    object_type = force_object_type_;
-  }
-  if (object_type.empty()) {
-    ERROR("No object type provided. Force object type or use 'type' field in msg");
-    return;
-  }
-
-  for (auto & detection : msg->poses) {
-    if (object_type == "aruco") {
-      processArucoMsg(detection, detection_odometry_info);
-    } else if (object_type == "gate") {
-      processGateMsg(detection, detection_odometry_info);
+  for (auto & detection : msg->detections) {
+    // First distinguish by GEOMETRY (this selects the g2o node/edge machinery); the object
+    // type (label) is checked inside each handler for type-specific behavior. TODO: type check.
+    switch (detection.geometry.type) {
+      case dps_slam_msgs::msg::Geometry::POSE:
+        processPoseDetection(detection, msg->header, detection_odometry_info);
+        break;
+      case dps_slam_msgs::msg::Geometry::POINT:
+        processPointDetection(detection, msg->header, detection_odometry_info);
+        break;
+      case dps_slam_msgs::msg::Geometry::VECTOR:
+      case dps_slam_msgs::msg::Geometry::PLANE:
+      case dps_slam_msgs::msg::Geometry::CYLINDER:
+        WARN("Detection geometry not yet supported by the backend: "
+          << static_cast<int>(detection.geometry.type));
+        break;
+      default:
+        ERROR("Detection has no/unknown geometry type: "
+          << static_cast<int>(detection.geometry.type));
+        break;
     }
   }
 
@@ -369,116 +365,100 @@ void SemanticSlam::detectionsCallback(
   }
 }
 
-void SemanticSlam::arucoPoseCallback(const as2_msgs::msg::PoseStampedWithID::SharedPtr msg)
-{
-  OdometryInfo detection_odometry_info;
-  if (use_dual_graph_) {
-    if (!optimizer_ptr_->checkAddingNewDetection(last_odometry_received_, detection_odometry_info)) {
-      return;
-    }
-  } else {
-    if (!optimizer_ptr_->generateDetectionOdometryInfo(last_odometry_received_, detection_odometry_info)) {
-      return;
-    }
-  }
-  processArucoMsg(*msg, detection_odometry_info);
-}
-
-void SemanticSlam::gatePoseCallback(const as2_msgs::msg::PoseStampedWithID::SharedPtr msg)
-{
-  OdometryInfo detection_odometry_info;
-  if (use_dual_graph_) {
-    if (!optimizer_ptr_->checkAddingNewDetection(last_odometry_received_, detection_odometry_info)) {
-      return;
-    }
-  } else {
-    if (!optimizer_ptr_->generateDetectionOdometryInfo(last_odometry_received_, detection_odometry_info)) {
-      return;
-    }
-  }
-  processGateMsg(*msg, detection_odometry_info);
-}
-
 ////// PROCESS //////
 
-void SemanticSlam::processGateMsg(
-  const as2_msgs::msg::PoseStampedWithID _msg,
+void SemanticSlam::processPointDetection(
+  const dps_slam_msgs::msg::DetectionWithID _msg,
+  const std_msgs::msg::Header _header,
   const OdometryInfo _detection_odometry_info)
 {
-  std::string gate_id = _msg.id;
-  Eigen::Vector3d gate_position = generatePoseFromMsg(_msg).translation();
-  Eigen::Matrix<double, 3, 3> gate_covariance = Eigen::MatrixXd::Identity(3, 3) * detection_covariance_factor_;
+  std::string point_id = _msg.id;
+  std::string object_type = _msg.label.empty() ? force_object_type_ : _msg.label;
+  Eigen::Vector3d point_position = generatePoseFromMsg(_msg.geometry.pose, _header).translation();
+  Eigen::Matrix<double, 3, 3> point_covariance = Eigen::MatrixXd::Identity(3, 3) * detection_covariance_factor_;
   if (detection_covariance_by_distance_) {
-    double distance = gate_position.norm();
-    gate_covariance = Eigen::MatrixXd::Identity(3, 3) * distance;
+    double distance = point_position.norm();
+    point_covariance = Eigen::MatrixXd::Identity(3, 3) * distance;
   }
   else if (detection_covariance_by_distance2_) {
-    double distance = gate_position.norm();
-    gate_covariance = Eigen::MatrixXd::Identity(3, 3) * distance * distance;
+    double distance = point_position.norm();
+    point_covariance = Eigen::MatrixXd::Identity(3, 3) * distance * distance;
   }
 
   bool detections_are_absolute = false;
 
   if (csv_logger_) {
     csv_logger_->logDetection(
-      _msg.pose.header.stamp.sec, _msg.pose.header.stamp.nanosec,
-      gate_id, "gate", gate_position,
+      _header.stamp.sec, _header.stamp.nanosec,
+      point_id, object_type, point_position,
       _detection_odometry_info.odom_ref.translation(), detections_are_absolute);
   }
 
-  GateDetection * gate(new GateDetection(
-      gate_id, gate_position, gate_covariance,
-      detections_are_absolute));
+  // The concrete detection type depends on the object type (label), not the geometry.
+  ObjectDetection * point_object = nullptr;
+  if (object_type == "gate") {
+    point_object = new GateDetection(
+      point_id, point_position, point_covariance, detections_are_absolute);
+  } else {
+    ERROR("Unknown point object type: " << object_type);
+    return;
+  }
 
-  optimizer_ptr_->handleNewObjectDetection(gate, _detection_odometry_info);
+  optimizer_ptr_->handleNewObjectDetection(point_object, _detection_odometry_info);
 }
 
-void SemanticSlam::processArucoMsg(
-  const as2_msgs::msg::PoseStampedWithID _msg,
+void SemanticSlam::processPoseDetection(
+  const dps_slam_msgs::msg::DetectionWithID _msg,
+  const std_msgs::msg::Header _header,
   const OdometryInfo _detection_odometry_info)
 {
-  std::string aruco_id = _msg.id;
-  // TODO(dps): Define how to use this
-  // msg->pose.header.stamp;
-  Eigen::Isometry3d aruco_pose = generatePoseFromMsg(_msg);
-  Eigen::Matrix<double, 6, 6> aruco_covariance = Eigen::MatrixXd::Identity(6, 6) * detection_covariance_factor_;
+  std::string pose_id = _msg.id;
+  std::string object_type = _msg.label.empty() ? force_object_type_ : _msg.label;
+  Eigen::Isometry3d pose = generatePoseFromMsg(_msg.geometry.pose, _header);
+  Eigen::Matrix<double, 6, 6> pose_covariance = Eigen::MatrixXd::Identity(6, 6) * detection_covariance_factor_;
   if (detection_covariance_by_distance_) {
-    double distance = aruco_pose.translation().norm();
-    aruco_covariance = aruco_covariance * distance;
+    double distance = pose.translation().norm();
+    pose_covariance = pose_covariance * distance;
   }
   if (detection_covariance_by_distance2_) {
-    double distance = aruco_pose.translation().norm();
-    aruco_covariance = aruco_covariance * distance * distance;
+    double distance = pose.translation().norm();
+    pose_covariance = pose_covariance * distance * distance;
   }
-  aruco_covariance(3, 3) *= detection_orientation_covariance_factor_;
-  aruco_covariance(4, 4) *= detection_orientation_covariance_factor_;
-  aruco_covariance(5, 5) *= detection_orientation_covariance_factor_;
+  pose_covariance(3, 3) *= detection_orientation_covariance_factor_;
+  pose_covariance(4, 4) *= detection_orientation_covariance_factor_;
+  pose_covariance(5, 5) *= detection_orientation_covariance_factor_;
   // calculate distance
   if (generate_orientation_cov_by_distance_) {
-    float distance = aruco_pose.translation().norm();
+    float distance = pose.translation().norm();
     if (distance > distance_for_orientation_covariance_increment_) {
       // ERROR("Increasing orientation covariance");
-      aruco_covariance(3, 3) *= detection_orientation_covariance_large_factor_;
-      aruco_covariance(4, 4) *= detection_orientation_covariance_large_factor_;
-      aruco_covariance(5, 5) *= detection_orientation_covariance_large_factor_;
+      pose_covariance(3, 3) *= detection_orientation_covariance_large_factor_;
+      pose_covariance(4, 4) *= detection_orientation_covariance_large_factor_;
+      pose_covariance(5, 5) *= detection_orientation_covariance_large_factor_;
     }
   }
-  // WARN(aruco_covariance);
+  // WARN(pose_covariance);
 
   bool detections_are_absolute = false;
 
   if (csv_logger_) {
     csv_logger_->logDetection(
-      _msg.pose.header.stamp.sec, _msg.pose.header.stamp.nanosec,
-      aruco_id, "aruco", aruco_pose.translation(),
+      _header.stamp.sec, _header.stamp.nanosec,
+      pose_id, object_type, pose.translation(),
       _detection_odometry_info.odom_ref.translation(), detections_are_absolute);
   }
 
-  ArucoDetection * aruco(new ArucoDetection(
-      aruco_id, aruco_pose, aruco_covariance,
-      detections_are_absolute));
+  // The concrete detection type depends on the object type (label), not the geometry.
+  ObjectDetection * pose_object = nullptr;
+  if (object_type == "aruco") {
+    pose_object = new ArucoDetection(
+      pose_id, pose, pose_covariance, detections_are_absolute);
+  } else {
+    ERROR("Unknown pose object type: " << object_type);
+    return;
+  }
 
-  optimizer_ptr_->handleNewObjectDetection(aruco, _detection_odometry_info);
+  optimizer_ptr_->handleNewObjectDetection(pose_object, _detection_odometry_info);
 }
 
 void SemanticSlam::updateMapOdomTransform(const std_msgs::msg::Header & _header)
@@ -493,12 +473,12 @@ void SemanticSlam::updateEarthMapTransform(const std_msgs::msg::Header & _header
     optimizer_ptr_->getMapTransform(), earth_frame_, estimated_map_frame_, _header.stamp);
 }
 Eigen::Isometry3d SemanticSlam::generatePoseFromMsg(
-  const as2_msgs::msg::PoseStampedWithID & _msg)
+  const geometry_msgs::msg::Pose & _pose, const std_msgs::msg::Header & _header)
 {
   Eigen::Isometry3d pose;
-  std::string ref_frame = _msg.pose.header.frame_id;
+  std::string ref_frame = _header.frame_id;
   // auto target_ts        = tf2::TimePointZero;
-  auto target_ts = _msg.pose.header.stamp;
+  auto target_ts = _header.stamp;
   std::chrono::nanoseconds tf_timeout =
     std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(1.0));
   auto tf_names = tf_buffer_->getAllFrameNames();
@@ -519,8 +499,11 @@ Eigen::Isometry3d SemanticSlam::generatePoseFromMsg(
       // INFO("Transform detection from " << ref_frame << " to " << robot_frame_);
       ref_frame_transform =
         tf_buffer_->lookupTransform(robot_frame_, ref_frame, target_ts, tf_timeout);
+      geometry_msgs::msg::PoseStamped pose_in;
+      pose_in.header = _header;
+      pose_in.pose = _pose;
       geometry_msgs::msg::PoseStamped transformed_pose;
-      tf2::doTransform(_msg.pose, transformed_pose, ref_frame_transform);
+      tf2::doTransform(pose_in, transformed_pose, ref_frame_transform);
       pose = convertToIsometry3d(transformed_pose.pose);
     } catch (const tf2::TransformException & ex) {
       RCLCPP_INFO(
@@ -528,7 +511,7 @@ Eigen::Isometry3d SemanticSlam::generatePoseFromMsg(
         robot_frame_.c_str(), ex.what());
     }
   } else {
-    pose = convertToIsometry3d(_msg.pose.pose);
+    pose = convertToIsometry3d(_pose);
   }
   return pose;
 }

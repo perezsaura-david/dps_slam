@@ -1,5 +1,5 @@
 [package]
-name = "ros-humble-dual-pose-graph"
+name = "ros-humble-dps-slam"
 version = "1.0.6"
 
 [package.build]

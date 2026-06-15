@@ -28,7 +28,7 @@
 
 
 /********************************************************************************************
- *  \file       debug_utils.hpp
+ *  \file       graph_node_types.hpp
  *  \brief      An state estimation server for AeroStack2
  *  \authors    David Pérez Saura
  *              Miguel Fernández Cortizas
@@ -37,23 +37,26 @@
  *              All Rights Reserved
  ********************************************************************************/
 
-#ifndef UTILS__DEBUG_UTILS_HPP_
-#define UTILS__DEBUG_UTILS_HPP_
+#ifndef AS2_SLAM__NODE_BUILDER_HPP_
+#define AS2_SLAM__NODE_BUILDER_HPP_
 
-#include <memory>
-#include "dual_pose_graph/graph_g2o.hpp"
+#include <Eigen/src/Core/Matrix.h>
+#include <string>
+#include <unordered_map>
+#include "dps_slam/graph_node_types.hpp"
 
-#define DEBUG_START_TIMER // auto start_time = std::chrono::high_resolution_clock::now();
-#define DEBUG_LOG_DURATION_GRAPH // auto end_time = std::chrono::high_resolution_clock::now(); \
-  auto duration = \
-    std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count(); \
-  DEBUG_GRAPH(__func__ << " : " << duration << " ms");
-#define DEBUG_LOG_DURATION // auto end_time = std::chrono::high_resolution_clock::now(); \
-  auto duration = \
-    std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count(); \
-  DEBUG(__func__ << " : " << duration << " ms");
+class NodeBuilder
+{
+  std::unordered_map<std::string, Eigen::Vector4d> colors;
 
-void debugGraphVertices(std::shared_ptr<GraphG2O> _graph);
-void debugComputeCovariance(const g2o::SparseBlockMatrix<Eigen::MatrixXd> & _spinv, int _node_id);
+  void build(OdomNode * _node)
+  {
+    color = ();
 
-#endif  // UTILS__DEBUG_UTILS_HPP_
+    _node = new OdomNode(id, colors["odom"], flavor);
+  }
+
+  ArucoNode build();
+};
+
+#endif  // AS2_SLAM__NODE_BUILDER_HPP_

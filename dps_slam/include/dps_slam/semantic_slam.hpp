@@ -51,8 +51,11 @@
 #include <string>
 #include <memory>
 // ROS2 MSGS
-#include <as2_msgs/msg/pose_stamped_with_id.hpp>
-#include <as2_msgs/msg/pose_stamped_with_id_array.hpp>
+#include <dps_slam_msgs/msg/detection_with_id.hpp>
+#include <dps_slam_msgs/msg/detection_with_id_array.hpp>
+#include <dps_slam_msgs/msg/geometry.hpp>
+#include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
@@ -60,7 +63,7 @@
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 
 #include <as2_core/node.hpp>
-#include "dual_pose_graph/optimizer_g2o.hpp"
+#include "dps_slam/optimizer_g2o.hpp"
 #include "utils/conversions.hpp"
 #include "utils/csv_logger.hpp"
 
@@ -72,13 +75,11 @@ public:
   void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
   void poseStampedCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
-  void detectionsCallback(const as2_msgs::msg::PoseStampedWithIDArray::SharedPtr msg);
-  void arucoPoseCallback(const as2_msgs::msg::PoseStampedWithID::SharedPtr msg);
-  void gatePoseCallback(const as2_msgs::msg::PoseStampedWithID::SharedPtr msg);
+  void detectionsCallback(const dps_slam_msgs::msg::DetectionWithIDArray::SharedPtr msg);
 
 private:
   Eigen::Isometry3d generatePoseFromMsg(
-    const as2_msgs::msg::PoseStampedWithID & _msg);
+    const geometry_msgs::msg::Pose & _pose, const std_msgs::msg::Header & _header);
   void parseFixedObjects(
     const rcl_interfaces::msg::ListParametersResult & _result,
     std::map<std::string, std::pair<std::string, std::vector<double>>> & fixed_objects,
@@ -101,21 +102,21 @@ private:
     const Eigen::Isometry3d _odom_pose,
     const Eigen::MatrixXd _odom_covariance,
     const std_msgs::msg::Header & _header);
-  void processArucoMsg(const as2_msgs::msg::PoseStampedWithID _msg);
-  void processGateMsg(const as2_msgs::msg::PoseStampedWithID _msg);
-  void processArucoMsg(
-    const as2_msgs::msg::PoseStampedWithID _msg,
+  // Geometry-level handlers: one per geometric representation. The object type (label)
+  // is checked inside each handler for type-specific behavior (covariance, association, ...).
+  void processPoseDetection(
+    const dps_slam_msgs::msg::DetectionWithID _msg,
+    const std_msgs::msg::Header _header,
     const OdometryInfo _detection_odometry_info);
-  void processGateMsg(
-    const as2_msgs::msg::PoseStampedWithID _msg,
+  void processPointDetection(
+    const dps_slam_msgs::msg::DetectionWithID _msg,
+    const std_msgs::msg::Header _header,
     const OdometryInfo _detection_odometry_info);
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
 
-  rclcpp::Subscription<as2_msgs::msg::PoseStampedWithIDArray>::SharedPtr detections_sub_;
-  rclcpp::Subscription<as2_msgs::msg::PoseStampedWithID>::SharedPtr aruco_pose_sub_;
-  rclcpp::Subscription<as2_msgs::msg::PoseStampedWithID>::SharedPtr gate_pose_sub_;
+  rclcpp::Subscription<dps_slam_msgs::msg::DetectionWithIDArray>::SharedPtr detections_sub_;
 
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr viz_main_markers_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr viz_temp_markers_pub_;

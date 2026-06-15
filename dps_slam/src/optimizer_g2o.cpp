@@ -35,7 +35,7 @@
  *         Miguel Fernández Cortizas
  */
 
-#include "dual_pose_graph/optimizer_g2o.hpp"
+#include "dps_slam/optimizer_g2o.hpp"
 #include <Eigen/src/Core/Matrix.h>
 #include <Eigen/src/Geometry/Transform.h>
 #include <memory>
@@ -44,9 +44,9 @@
 #include <vector>
 #include <string>
 #include <iostream>
-#include "dual_pose_graph/graph_g2o.hpp"
-#include "dual_pose_graph/graph_node_types.hpp"
-#include "dual_pose_graph/object_detection_types.hpp"
+#include "dps_slam/graph_g2o.hpp"
+#include "dps_slam/graph_node_types.hpp"
+#include "dps_slam/object_detection_types.hpp"
 #include "utils/conversions.hpp"
 #include "utils/general_utils.hpp"
 #include "utils/debug_utils.hpp"

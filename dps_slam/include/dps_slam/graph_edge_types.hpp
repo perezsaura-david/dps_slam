@@ -40,7 +40,7 @@
 #ifndef AS2_SLAM__GRAPH_EDGE_TYPES_HPP_
 #define AS2_SLAM__GRAPH_EDGE_TYPES_HPP_
 
-#include "dual_pose_graph/graph_node_types.hpp"
+#include "dps_slam/graph_node_types.hpp"
 
 #include <Eigen/Dense>
 #include <Eigen/src/Core/Matrix.h>

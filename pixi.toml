@@ -5,7 +5,7 @@ authors = [
     "Miguel Fernandez-Cortizas <TBD>",
     "Alvaro Gaona <alvgaona@gmail.com>"
 ]
-name = "dual-pose-graph"
+name = "dps-slam"
 version = "0.1.0"
 channels = ["conda-forge", "https://prefix.dev/aerostack2"]
 platforms = ["osx-arm64"]
@@ -31,7 +31,7 @@ channels = ["robostack-humble", "https://prefix.dev/aerostack2"]
 ros-humble-ros2cli = ">=0.18.17,<0.19"
 ros-humble-ros2launch = ">=0.19.13,<0.20"
 ros-humble-ros2topic = ">=0.18.17,<0.19"
-ros-humble-dual-pose-graph = { path = "dual_pose_graph" }
+ros-humble-dps-slam = { path = "dps_slam" }
 ros-humble-rosbag2-storage-mcap = ">=0.15.16,<0.16"
 ros-humble-rosbag2 = ">=0.15.16,<0.16"
 ros-humble-rviz2 = ">=11.2.25,<12"
