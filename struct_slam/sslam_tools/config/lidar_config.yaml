@@ -1,0 +1,18 @@
+/**:
+  ros__parameters:
+    HFOV: 360.0
+    COLS: 1024
+    VFOV: 22.5
+    ROWS: 32
+
+    height_filter_flag: "elevation_grid_filter" # normal / elevation_grid_filter
+    MIN_Z: -2000.0
+    MAX_Z: 2000.0
+    GRID_SIZE: 10.0 # mm
+    Z_DIFF_THRESHOLD: 50.0
+    POINT_COUNT_THRESHOLD: 0
+
+    scale_to_mm: 1000.0
+    accumulate_packets: 10
+
+    publish_pointcloud: false

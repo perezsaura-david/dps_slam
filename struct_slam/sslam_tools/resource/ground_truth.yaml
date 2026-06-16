@@ -1,0 +1,62 @@
+metadata:
+  unit: "cm"
+
+contours:
+  - scenario: "garage_part"
+    boundary_flag: false
+    closed: false
+    points:
+      - [-1046.2, 518.8]
+      - [0, 518.8]
+      - [0, 0]
+      - [1614.4, 0]
+      - [1614.4, 1503.6]
+      - [-1046.2, 1503.6]
+    offset:
+      x: 1082.0
+      y: 854.0
+      rotation: 70.0
+    match_dist_thresh: 10.0
+
+  - scenario: "cslab"
+    boundary_flag: true
+    closed: true
+    points:
+      - [0, 0]
+      - [534, 0]
+      - [534, 542]
+      - [0, 542]
+    offset:
+      x: 250.0
+      y: 250.0
+      rotation: 0.0
+    match_dist_thresh: 1000.0
+
+  - scenario: "corridor"
+    boundary_flag: false
+    closed: true
+    points:
+      - [0, 0]
+      - [1863, 0]
+      - [1863, 159]
+      - [0, 159]
+    offset:
+      x: 700.0
+      y: 75.0
+      rotation: 70.0
+    match_dist_thresh: 10.0
+
+  - scenario: "dungeon"
+    boundary_flag: false
+    closed: false
+    points:
+      - [0, 0]
+      - [895, 0]
+      - [895, -251]
+      - [-216, -251]
+      - [-216, 0]
+    offset:
+      x: 301.0
+      y: -109.0
+      rotation: 88.8
+    match_dist_thresh: 10.0

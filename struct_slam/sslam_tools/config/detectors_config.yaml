@@ -1,0 +1,18 @@
+detector_node:
+  ros__parameters:
+    detector_type: "yolo"
+    capture_inference_image: false
+
+    yolo_model_path: "install/sslam_tools/share/sslam_tools/resource/yolo_model"
+    yolo_model_name:  "yolon1024HD-clean-AdamW_openvino_model" # "Yolov8n-FJ.pt" # "yolon1024HD-clean-AdamW_openvino_model" # "yolon1024p2.pt" # "yolon1024HD-clean.pt" #"yolon640_openvino_model" #"yolon640.pt" #"YOLOv8n-obb_TRAINED_lgl_1_openvino_model"
+    label: false
+
+    truncate: false
+
+    result_img_size: 1024
+
+    processed_img_size: 1024
+    base_img_size: 2048
+    virtual_canvas_size: 4096
+    sensor_posx: 1024
+    sensor_posy: 1024

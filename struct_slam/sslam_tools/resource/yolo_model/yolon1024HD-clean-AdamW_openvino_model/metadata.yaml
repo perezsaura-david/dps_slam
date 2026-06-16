@@ -1,0 +1,23 @@
+description: Ultralytics YOLOv8n-obb model trained on cleaner_ds/data.yaml
+author: Ultralytics
+date: '2026-02-18T16:55:35.347866'
+version: 8.3.214
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: obb
+batch: 1
+imgsz:
+- 1024
+- 1024
+names:
+  0: walls
+  1: columns
+args:
+  batch: 1
+  fraction: 1.0
+  half: false
+  int8: false
+  dynamic: true
+  nms: true
+channels: 3

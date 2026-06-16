@@ -1,0 +1,39 @@
+/local_fusion_node:
+  ros__parameters:
+    dist_threshold: 10.0  # cm
+    angle_threshold_deg: 20.0  # deg
+    overlap_thresh: 30.0
+    eps: 0.1
+    min_samples: 1
+
+    wall_connection_threshold: 15.0
+    wall_length_threshold: 50.0
+
+    publish_img_flag: false
+    processed_img_size: 640
+    base_img_size: 2048
+    sensor_posx: 1024
+    sensor_posy: 1024
+
+/global_fusion_node:
+  ros__parameters:
+    match_dist_thresh: 80.0 # cm
+    match_angle_thresh_deg: 15.0 # deg
+    overlap_thresh: 50.0 # cm
+    gate_threshold: 0.8
+    max_misses_thresh: 5
+    sensor_range: 500.0 # cm
+    # dist_weight: 1.0 / 300.0
+    # angle_weight: 1.0 / 6.28 # 2 * pi
+
+    publish_img_flag: true
+    processed_img_size: 640
+    base_img_size: 3072
+    sensor_posx: 800
+    sensor_posy: 800
+
+    movement_flag: true
+    map_frame: 'drone0/map' # 'camera_init' # 'drone0/map'
+    lidar_frame: 'drone0/base_link' # 'body' # 'drone0/base_link'
+
+    manhattan_opt_flag: true

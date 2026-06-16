@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>sslam_tools</name>
+  <version>0.0.0</version>
+  <description>This package converts raw LiDAR range information r into a 2D bird's-eye view (BEV) map.</description>
+  <maintainer email="guanliang.li@alumnos.upm.es">Guanliang Li</maintainer>
+  <maintainer email="pedro.espinosa@upm.es">Pedro Espinosa Angulo</maintainer>
+  <maintainer email="stapia@fi.upm.es">Santiago Tapia Fernández</maintainer>
+  <license>GPL-3.0-or-later</license>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2_ros_py</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
