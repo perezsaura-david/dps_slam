@@ -247,6 +247,32 @@ bool OptimizerG2O::handleNewOdom(
               object.first, gate_node->getPosition(), cov_matrix, true);
           }
 
+          GraphNodePlane * plane_node = dynamic_cast<GraphNodePlane *>(object.second);
+          if (plane_node) {
+            Eigen::MatrixXd cov_matrix = temp_graph->computeNodeCovariance(plane_node);
+            g2o::Plane3D plane = plane_node->getPlane();
+            Eigen::Vector3d plane_pos = plane.normal() * plane.distance();
+            merge_log << temp_nodes << "," << temp_edges << "," << temp_objects << ",1,"
+                      << object.first << ","
+                      << plane_pos.x() << ","
+                      << plane_pos.y() << ","
+                      << plane_pos.z() << ","
+                      << cov_matrix.size() << ",";
+            if (cov_matrix.size() > 0) {
+              merge_log << cov_matrix.diagonal().transpose();
+            } else {
+              merge_log << "empty";
+            }
+            merge_log << "," << new_odometry_info.map_ref.translation().x()
+                      << "," << new_odometry_info.map_ref.translation().y()
+                      << "," << new_odometry_info.map_ref.translation().z()
+                      << "," << main_graph->graph_->vertices().size()
+                      << "," << main_graph->graph_->edges().size() << std::endl;
+            if (cov_matrix.size() == 0) { continue; }
+            object_detection = new ObjectDetectionPlane(
+              object.first, plane, cov_matrix, true);
+          }
+
           if (!object_detection) { continue; }
           if (!object_detection->prepareMeasurements(new_odometry_info)) {
             ERROR("Prepare detection ERROR");

@@ -325,7 +325,7 @@ protected:
   g2o_custom::EdgeSE3Plane3D * edge_;
   std::string element_name_ = "edge";
   std::string edge_name_ = "Plane";
-  Eigen::Vector4d viz_color_ = {1.0, 0.5, 0.0, 1.0};
+  Eigen::Vector4d viz_color_ = {1.0, 0.65, 0.0, 1.0};
 };
 
 class ArucoEdge : public GraphEdgeSE3

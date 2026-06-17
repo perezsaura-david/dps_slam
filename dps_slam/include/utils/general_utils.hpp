@@ -56,7 +56,7 @@
 #define WARN(x) std::cout << YELLOW_COLOR << "[WARN] " << x << RESET_COLOR << std::endl
 
 #define FLAG(x) // std::cout << CYAN_COLOR << "[FLAG] " << x << RESET_COLOR << std::endl
-#define DEBUG(x) // std::cout << GREEN_COLOR << "[DEBUG] " << x << RESET_COLOR << std::endl
+#define DEBUG(x) std::cout << GREEN_COLOR << "[DEBUG] " << x << RESET_COLOR << std::endl
 #define DEBUG_VERBOSE(x) // \
   std::cout << GREEN_COLOR << "[DEBUG] " << x << std::endl \
             << "\t  at line " << __LINE__ << " in function " << __func__ << RESET_COLOR \

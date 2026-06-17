@@ -91,6 +91,10 @@ private:
   void visualizeMainGraph();
   void visualizeTempGraph();
 
+  // Publish the main graph's optimized object landmarks as a DetectionWithIDArray,
+  // each in its native geometry (aruco->POSE, gate->POINT, wall->LINE).
+  void publishOptimizedDetections(const std_msgs::msg::Header & _header);
+
   visualization_msgs::msg::MarkerArray generateVizNodesMsg(std::shared_ptr<GraphG2O> & _graph);
   visualization_msgs::msg::MarkerArray generateVizEdgesMsg(std::shared_ptr<GraphG2O> & _graph);
   visualization_msgs::msg::MarkerArray generateCleanMarkersMsg();
@@ -129,6 +133,8 @@ private:
 
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr viz_main_markers_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr viz_temp_markers_pub_;
+
+  rclcpp::Publisher<dps_slam_msgs::msg::DetectionWithIDArray>::SharedPtr optimized_detections_pub_;
 
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
     corrected_localization_pub_;

@@ -258,7 +258,7 @@ protected:
   g2o::VertexPlane * vertex_;
   std::string element_name_ = "node";
   std::string node_name_ = "Plane";
-  Eigen::Vector4d viz_color_ = {1.0, 0.5, 0.0, 1.0};
+  Eigen::Vector4d viz_color_ = {1.0, 0.65, 0.0, 1.0};
   Eigen::MatrixXd cov_matrix_;
 };
 

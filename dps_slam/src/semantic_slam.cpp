@@ -151,6 +151,13 @@ SemanticSlam::SemanticSlam(rclcpp::NodeOptions & options)
     corrected_localization_topic, reliable_qos);
   corrected_path_pub_ = this->create_publisher<nav_msgs::msg::Path>(
     corrected_path_topic, reliable_qos);
+  std::string optimized_detections_topic;
+  this->get_parameter_or(
+    "optimized_detections_topic", optimized_detections_topic,
+    std::string("slam/optimized_detections"));
+  optimized_detections_pub_ = this->create_publisher<dps_slam_msgs::msg::DetectionWithIDArray>(
+    optimized_detections_topic, reliable_qos);
+  PARAM("Publishing optimized detections on: " << optimized_detections_topic);
   if (visualize_graphs_) {
     viz_main_markers_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
       viz_main_markers_topic, reliable_qos);
@@ -244,6 +251,7 @@ void SemanticSlam::processOdometryReceived(
         visualizeMainGraph();
         visualizeCleanTempGraph();
       }
+      publishOptimizedDetections(_header);
       updateMapOdomTransform(_header);
       updateEarthMapTransform(_header);
       // DEBUG_LOG_DURATION
@@ -550,6 +558,12 @@ void SemanticSlam::processLineDetection(
   double distance = _msg.geometry.line.distance;
   g2o::Plane3D plane(Eigen::Vector4d(n.x, n.y, n.z, -distance));
 
+  DEBUG(
+    "Wall '" << line_id << "' BEFORE transform [" << _header.frame_id << "]: normal=("
+      << plane.normal().x() << ", " << plane.normal().y() << ", " << plane.normal().z()
+      << ") distance=" << plane.distance() << " azimuth_deg="
+      << std::atan2(plane.normal().y(), plane.normal().x()) * 180.0 / M_PI);
+
   // Transform the plane into the robot frame if it arrives in another frame.
   std::string ref_frame = _header.frame_id;
   if (!ref_frame.empty() && ref_frame != robot_frame_) {
@@ -559,11 +573,23 @@ void SemanticSlam::processLineDetection(
       auto ref_to_robot =
         tf_buffer_->lookupTransform(robot_frame_, ref_frame, _header.stamp, tf_timeout);
       plane = convertToIsometry3d(ref_to_robot.transform) * plane;
+      DEBUG(
+        "Wall '" << line_id << "' AFTER transform [" << robot_frame_ << "]: normal=("
+          << plane.normal().x() << ", " << plane.normal().y() << ", " << plane.normal().z()
+          << ") distance=" << plane.distance() << " azimuth_deg="
+          << std::atan2(plane.normal().y(), plane.normal().x()) * 180.0 / M_PI);
     } catch (const tf2::TransformException & ex) {
+      DEBUG(
+        "Wall '" << line_id << "' NOT transformed: lookup " << robot_frame_ << " <- "
+          << ref_frame << " failed (" << ex.what() << "); using plane as-is");
       RCLCPP_INFO(
         this->get_logger(), "Could not transform %s to %s: %s", ref_frame.c_str(),
         robot_frame_.c_str(), ex.what());
     }
+  } else {
+    DEBUG(
+      "Wall '" << line_id << "' NOT transformed: ref_frame ('" << ref_frame
+        << "') == robot_frame or empty; using plane as-is");
   }
 
   // Map the line's 2x2 covariance [theta, distance] into the plane's 3x3
@@ -657,6 +683,50 @@ void SemanticSlam::visualizeMainGraph()
   visualization_msgs::msg::MarkerArray viz_edges_msg =
     generateVizEdgesMsg(optimizer_ptr_->main_graph);
   viz_main_markers_pub_->publish(viz_edges_msg);
+}
+
+void SemanticSlam::publishOptimizedDetections(const std_msgs::msg::Header & _header)
+{
+  if (!optimized_detections_pub_ || !optimizer_ptr_->main_graph) {
+    return;
+  }
+
+  dps_slam_msgs::msg::DetectionWithIDArray detections_msg;
+  detections_msg.header.stamp = _header.stamp;
+  detections_msg.header.frame_id = earth_frame_;  // main-graph estimates live in the earth/map frame
+
+  for (auto & id_node : optimizer_ptr_->main_graph->getObjectNodes()) {
+    GraphNode * node = id_node.second;
+    if (!node) {continue;}
+
+    dps_slam_msgs::msg::DetectionWithID detection;
+    detection.id = id_node.first;
+
+    if (auto * aruco_node = dynamic_cast<ArucoNode *>(node)) {
+      detection.label = "aruco";
+      detection.geometry.type = dps_slam_msgs::msg::Geometry::POSE;
+      detection.geometry.pose.pose = convertToGeometryMsgPose(aruco_node->getPose());
+    } else if (auto * gate_node = dynamic_cast<GateNode *>(node)) {
+      detection.label = "gate";
+      detection.geometry.type = dps_slam_msgs::msg::Geometry::POINT;
+      detection.geometry.point.point = convertToGeometryMsgPoint(gate_node->getPosition());
+    } else if (auto * plane_node = dynamic_cast<GraphNodePlane *>(node)) {
+      detection.label = "wall";
+      detection.geometry.type = dps_slam_msgs::msg::Geometry::LINE;
+      g2o::Plane3D plane = plane_node->getPlane();
+      Eigen::Vector3d normal = plane.normal();
+      detection.geometry.line.normal.x = normal.x();
+      detection.geometry.line.normal.y = normal.y();
+      detection.geometry.line.normal.z = normal.z();
+      detection.geometry.line.distance = plane.distance();
+    } else {
+      continue;  // unknown object node type
+    }
+
+    detections_msg.detections.push_back(detection);
+  }
+
+  optimized_detections_pub_->publish(detections_msg);
 }
 
 void SemanticSlam::visualizeTempGraph()
