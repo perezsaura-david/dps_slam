@@ -4,12 +4,6 @@ install/
 log/
 .cache/
 
-# Struct SLAM yolo.pt
-struct_slam/sslam_tools/resource/yolo_model/*.pt
-struct_slam/sslam_tools/resource/yolo_model/best_int8_openvino_model
-struct_slam/sslam_tools/resource/yolo_model/YOLOv8n-obb_TRAINED_lgl_1_openvino_model
-struct_slam/sslam_tools/resource/yolo_model/yolo1024HD-clean_AdamW_int8_openvino_model
-
 # Pixi
 .pixi/*
 !.pixi/config.toml
