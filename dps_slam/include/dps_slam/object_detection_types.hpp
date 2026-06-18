@@ -44,6 +44,7 @@
 #include <Eigen/src/Core/Matrix.h>
 #include <Eigen/src/Geometry/Transform.h>
 #include <string>
+#include <vector>
 #include "dps_slam/graph_node_types.hpp"
 #include "dps_slam/graph_edge_types.hpp"
 #include "utils/conversions.hpp"
@@ -210,17 +211,28 @@ class ObjectDetectionPlane : public ObjectDetectionBase
 public:
   ObjectDetectionPlane(
     const std::string & _id, const g2o::Plane3D & _plane,
-    const Eigen::MatrixXd & _covariance, const bool _detections_are_absolute)
-  : ObjectDetectionBase(_id, _covariance, _detections_are_absolute), measured_plane_(_plane) {}
+    const Eigen::MatrixXd & _covariance, const bool _detections_are_absolute,
+    const std::vector<Eigen::Vector3d> & _boundary = {})
+  : ObjectDetectionBase(_id, _covariance, _detections_are_absolute),
+    measured_plane_(_plane), measured_boundary_(_boundary) {}
 
   bool prepareMeasurements(const OdometryInfo & _detection_odometry) override
   {
+    Eigen::Isometry3d node_transform;
     if (detections_are_absolute_) {
       edge_measurement_ = _detection_odometry.odom_ref.inverse() * measured_plane_;
       node_estimation_ = measured_plane_;
+      node_transform = Eigen::Isometry3d::Identity();
     } else {
       edge_measurement_ = measured_plane_;
       node_estimation_ = _detection_odometry.map_ref * measured_plane_;
+      node_transform = _detection_odometry.map_ref;
+    }
+    // Move the boundary corners into the same (node/map) frame as the estimate.
+    node_boundary_.clear();
+    node_boundary_.reserve(measured_boundary_.size());
+    for (const auto & p : measured_boundary_) {
+      node_boundary_.push_back(node_transform * p);
     }
     return true;
   }
@@ -229,6 +241,7 @@ public:
   {
     GraphNodePlane * node = new GraphNodePlane(node_estimation_);
     node->setCovariance(covariance_matrix_);
+    node->setBoundary(node_boundary_);
     return node;
   }
 
@@ -247,6 +260,8 @@ protected:
   g2o::Plane3D measured_plane_;
   g2o::Plane3D node_estimation_;
   g2o::Plane3D edge_measurement_;
+  std::vector<Eigen::Vector3d> measured_boundary_;
+  std::vector<Eigen::Vector3d> node_boundary_;
 };
 
 #endif  // AS2_SLAM__OBJECTS_TYPES_HPP_

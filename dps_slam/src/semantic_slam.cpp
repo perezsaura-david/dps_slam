@@ -505,6 +505,13 @@ void SemanticSlam::processPlaneDetection(
   const auto & coef = _msg.geometry.plane.plane.coef;
   g2o::Plane3D plane(Eigen::Vector4d(coef[0], coef[1], coef[2], coef[3]));
 
+  // Observed extent of the plane patch (corner points), in the detection frame.
+  std::vector<Eigen::Vector3d> boundary;
+  boundary.reserve(_msg.geometry.plane.boundary.size());
+  for (const auto & p : _msg.geometry.plane.boundary) {
+    boundary.emplace_back(p.x, p.y, p.z);
+  }
+
   // Transform the plane into the robot frame if it arrives in another frame.
   std::string ref_frame = _header.frame_id;
   if (!ref_frame.empty() && ref_frame != robot_frame_) {
@@ -513,7 +520,9 @@ void SemanticSlam::processPlaneDetection(
     try {
       auto ref_to_robot =
         tf_buffer_->lookupTransform(robot_frame_, ref_frame, _header.stamp, tf_timeout);
-      plane = convertToIsometry3d(ref_to_robot.transform) * plane;
+      Eigen::Isometry3d ref_to_robot_iso = convertToIsometry3d(ref_to_robot.transform);
+      plane = ref_to_robot_iso * plane;
+      for (auto & p : boundary) {p = ref_to_robot_iso * p;}
     } catch (const tf2::TransformException & ex) {
       RCLCPP_INFO(
         this->get_logger(), "Could not transform %s to %s: %s", ref_frame.c_str(),
@@ -535,7 +544,7 @@ void SemanticSlam::processPlaneDetection(
 
   // The concrete detection type depends on the object type (label), not the geometry.
   ObjectDetection * plane_object = new ObjectDetectionPlane(
-    plane_id, plane, plane_covariance, detections_are_absolute);
+    plane_id, plane, plane_covariance, detections_are_absolute, boundary);
 
   optimizer_ptr_->handleNewObjectDetection(plane_object, _detection_odometry_info);
 }
@@ -558,6 +567,13 @@ void SemanticSlam::processLineDetection(
   double distance = _msg.geometry.line.distance;
   g2o::Plane3D plane(Eigen::Vector4d(n.x, n.y, n.z, -distance));
 
+  // Observed extent of the wall segment (endpoints), in the detection frame.
+  std::vector<Eigen::Vector3d> boundary;
+  boundary.reserve(_msg.geometry.line.boundary.size());
+  for (const auto & p : _msg.geometry.line.boundary) {
+    boundary.emplace_back(p.x, p.y, p.z);
+  }
+
   DEBUG(
     "Wall '" << line_id << "' BEFORE transform [" << _header.frame_id << "]: normal=("
       << plane.normal().x() << ", " << plane.normal().y() << ", " << plane.normal().z()
@@ -572,7 +588,9 @@ void SemanticSlam::processLineDetection(
     try {
       auto ref_to_robot =
         tf_buffer_->lookupTransform(robot_frame_, ref_frame, _header.stamp, tf_timeout);
-      plane = convertToIsometry3d(ref_to_robot.transform) * plane;
+      Eigen::Isometry3d ref_to_robot_iso = convertToIsometry3d(ref_to_robot.transform);
+      plane = ref_to_robot_iso * plane;
+      for (auto & p : boundary) {p = ref_to_robot_iso * p;}
       DEBUG(
         "Wall '" << line_id << "' AFTER transform [" << robot_frame_ << "]: normal=("
           << plane.normal().x() << ", " << plane.normal().y() << ", " << plane.normal().z()
@@ -613,7 +631,7 @@ void SemanticSlam::processLineDetection(
 
   // Reuses the plane backend: the line is stored as a vertical Plane3D landmark.
   ObjectDetection * line_object = new ObjectDetectionPlane(
-    line_id, plane, plane_covariance, detections_are_absolute);
+    line_id, plane, plane_covariance, detections_are_absolute, boundary);
 
   optimizer_ptr_->handleNewObjectDetection(line_object, _detection_odometry_info);
 }

@@ -49,6 +49,7 @@
 #include <g2o/types/slam3d_addons/vertex_plane.h>
 
 #include <string>
+#include <vector>
 
 #include <visualization_msgs/msg/marker.hpp>
 #include "utils/conversions.hpp"
@@ -205,15 +206,60 @@ public:
   visualization_msgs::msg::Marker getVizMarker(const bool _main) override
   {
     visualization_msgs::msg::Marker node_marker_msg;
-    node_marker_msg.type = node_marker_msg.CUBE;
     node_marker_msg.ns = getVizMarkerNamespace();
     node_marker_msg.id = vertex_->id();
+    Eigen::Vector4d color = getVizMarkerColor(_main);
 
-    // Place a thin slab at the plane's closest point to the origin, oriented so
-    // that its local +Z matches the plane normal.
     g2o::Plane3D plane = vertex_->estimate();
     Eigen::Vector3d normal = plane.normal();
-    Eigen::Vector3d position = normal * plane.distance();
+    double distance = plane.distance();
+
+    if (boundary_.size() >= 2) {
+      // Outline the observed extent: the boundary corners projected onto the
+      // current (optimized) plane, so the limits track the plane as it is refined.
+      node_marker_msg.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      node_marker_msg.pose.orientation.w = 1.0;
+      node_marker_msg.scale.x = 0.05;  // line width
+
+      auto project = [&](const Eigen::Vector3d & p) {
+        return Eigen::Vector3d(p - (normal.dot(p) - distance) * normal);
+      };
+      auto push = [&](const Eigen::Vector3d & p) {
+        geometry_msgs::msg::Point pt;
+        pt.x = p.x();
+        pt.y = p.y();
+        pt.z = p.z();
+        node_marker_msg.points.push_back(pt);
+      };
+
+      if (boundary_.size() == 2) {
+        // A 2-point segment is a wall (vertical plane): give it vertical extent
+        // by outlining a rectangle spanning +/- half the wall height in z.
+        const Eigen::Vector3d up(0.0, 0.0, viz_height_ * 0.5);
+        Eigen::Vector3d a = project(boundary_[0]);
+        Eigen::Vector3d b = project(boundary_[1]);
+        push(a - up);
+        push(b - up);
+        push(b + up);
+        push(a + up);
+        push(a - up);  // close the rectangle
+      } else {
+        // A polygon (3+ corners): outline it and close the loop.
+        for (const auto & p : boundary_) {push(project(p));}
+        push(project(boundary_.front()));
+      }
+
+      node_marker_msg.color.r = color[0];
+      node_marker_msg.color.g = color[1];
+      node_marker_msg.color.b = color[2];
+      node_marker_msg.color.a = color[3];
+      return node_marker_msg;
+    }
+
+    // Fallback (extent unknown): a thin 2x2 slab at the plane's closest point to
+    // the origin, oriented so that its local +Z matches the plane normal.
+    node_marker_msg.type = node_marker_msg.CUBE;
+    Eigen::Vector3d position = normal * distance;
     Eigen::Quaterniond orientation =
       Eigen::Quaterniond::FromTwoVectors(Eigen::Vector3d::UnitZ(), normal);
     node_marker_msg.pose.position.x = position.x();
@@ -226,7 +272,6 @@ public:
     node_marker_msg.scale.x = 2.0;
     node_marker_msg.scale.y = 2.0;
     node_marker_msg.scale.z = 0.02;
-    Eigen::Vector4d color = getVizMarkerColor(_main);
     node_marker_msg.color.r = color[0];
     node_marker_msg.color.g = color[1];
     node_marker_msg.color.b = color[2];
@@ -238,6 +283,8 @@ public:
   g2o::Plane3D getPlane() {return vertex_->estimate();}
   void setCovariance(const Eigen::MatrixXd & _cov_matrix) {cov_matrix_ = _cov_matrix;}
   Eigen::MatrixXd getCovariance() {return cov_matrix_;}
+  // Observed extent of the plane patch (corner points, in the node/map frame).
+  void setBoundary(const std::vector<Eigen::Vector3d> & _boundary) {boundary_ = _boundary;}
 
 protected:
   std::string getNodeName() override {return node_name_;}
@@ -260,6 +307,8 @@ protected:
   std::string node_name_ = "Plane";
   Eigen::Vector4d viz_color_ = {1.0, 0.65, 0.0, 1.0};
   Eigen::MatrixXd cov_matrix_;
+  std::vector<Eigen::Vector3d> boundary_;
+  double viz_height_ = 2.0;  // wall marker vertical extent (m)
 };
 
 class GraphNodeSE3 : public GraphNode
