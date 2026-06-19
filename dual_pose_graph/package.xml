@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>dual_pose_graph</name>
-  <version>1.0.6</version>
+  <version>0.1.1</version>
   <description>Dual pose graph SLAM for AeroStack2</description>
 
   <maintainer email="cvar.upm3@gmail.com">CVAR-UPM</maintainer>
@@ -22,8 +22,6 @@
   <depend>pluginlib</depend>
   <depend>backward_ros</depend>
   <depend>libfmt</depend>
-  <depend>g2o</depend>
-  <depend>ceres</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

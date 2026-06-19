@@ -36,28 +36,25 @@
  */
 
 #include "dual_pose_graph/semantic_slam.hpp"
-#include <Eigen/src/Core/Matrix.h>
-#include <Eigen/src/Geometry/Transform.h>
-#include <eigen3/Eigen/src/Geometry/Transform.h>
-#include <g2o/core/optimizable_graph.h>
-#include <geometry_msgs/msg/detail/pose_stamped__struct.hpp>
-#include <geometry_msgs/msg/detail/pose_with_covariance_stamped__struct.hpp>
-#include <geometry_msgs/msg/detail/transform_stamped__struct.hpp>
+#include <g2o/types/slam3d/vertex_se3.h>
+#include <g2o/types/slam3d/vertex_pointxyz.h>
+#include <fstream>
+#include <map>
+#include <unordered_map>
+#include <utility>
 #include <memory>
 #include <rclcpp/subscription_options.hpp>
 #include <string>
 #include <vector>
 
 #include "dual_pose_graph/graph_node_types.hpp"
-#include "optimizer_g2o.hpp"
+#include "dual_pose_graph/optimizer_g2o.hpp"
 #include "utils/conversions.hpp"
 #include "dual_pose_graph/object_detection_types.hpp"
-#include "utils/debug_utils.hpp"
-#include "utils/general_utils.hpp"
+#include "dual_pose_graph/utils/general_utils.hpp"
 
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-#include <visualization_msgs/msg/detail/marker_array__struct.hpp>
 
 // #include <filesystem>
 // #include <pluginlib/class_loader.hpp>
@@ -172,8 +169,8 @@ SemanticSlam::SemanticSlam(rclcpp::NodeOptions & options)
   csv_logger_ = std::make_unique<CsvLogger>(".");
 
   optimizer_ptr_ = std::make_unique<OptimizerG2O>();
-  optimizer_ptr_->setParameters(getOptimizerParameters());
-  optimizer_ptr_->setCsvLogger(csv_logger_.get());
+  optimizer_ptr_->set_parameters(getOptimizerParameters());
+  optimizer_ptr_->set_csv_logger(csv_logger_.get());
 
   std_msgs::msg::Header header;
   header.stamp = this->now();
@@ -189,7 +186,7 @@ SemanticSlam::SemanticSlam(rclcpp::NodeOptions & options)
     tf_publish_timer_ = this->create_timer(
       std::chrono::duration<double>(1.0 / 100.0),
       [this]() {
-        optimizer_ptr_->updateOdomMapTransform();
+        optimizer_ptr_->update_odom_map_transform();
         std_msgs::msg::Header header;
         header.stamp = this->now();
         updateMapOdomTransform(header);
@@ -241,7 +238,7 @@ void SemanticSlam::processOdometryReceived(
 
     // TODO(dps): Define how to use this
     // msg->header.stamp;
-    bool new_node_added = optimizer_ptr_->handleNewOdom(odometry_received_);
+    bool new_node_added = optimizer_ptr_->handle_new_odom(odometry_received_);
 
     last_odometry_received_ = odometry_received_;
 
@@ -257,8 +254,8 @@ void SemanticSlam::processOdometryReceived(
   }
 
   // Get map_odom_transform from optimizer and publish corrected localization
-  Eigen::Isometry3d map_odom_transform = optimizer_ptr_->getMapOdomTransform();
-  Eigen::Isometry3d map_transform = optimizer_ptr_->getMapTransform();
+  Eigen::Isometry3d map_odom_transform = optimizer_ptr_->get_map_odom_transform();
+  Eigen::Isometry3d map_transform = optimizer_ptr_->get_map_transform();
   // Eigen::Isometry3d corrected_odometry_pose = map_odom_transform * _odom_pose;
   Eigen::Isometry3d corrected_odometry_pose = map_transform * map_odom_transform * _odom_pose;
   geometry_msgs::msg::PoseWithCovarianceStamped corrected_localization_msg;
@@ -270,7 +267,7 @@ void SemanticSlam::processOdometryReceived(
   corrected_localization_pub_->publish(corrected_localization_msg);
 
   if (csv_logger_) {
-    csv_logger_->logOdom(
+    csv_logger_->log_odom(
       _header.stamp.sec, _header.stamp.nanosec,
       _odom_pose, _odom_covariance, corrected_odometry_pose);
   }
@@ -334,11 +331,11 @@ void SemanticSlam::detectionsCallback(
   // DEBUG_START_TIMER
   OdometryInfo detection_odometry_info;
   if (use_dual_graph_) {
-    if (!optimizer_ptr_->checkAddingNewDetection(detection_odometry, detection_odometry_info)) {
+    if (!optimizer_ptr_->check_adding_new_detection(detection_odometry, detection_odometry_info)) {
       return;
     }
   } else {
-    if (!optimizer_ptr_->generateDetectionOdometryInfo(detection_odometry, detection_odometry_info)) {
+    if (!optimizer_ptr_->generate_detection_odometry_info(detection_odometry, detection_odometry_info)) {
       return;
     }
   }
@@ -373,11 +370,11 @@ void SemanticSlam::arucoPoseCallback(const as2_msgs::msg::PoseStampedWithID::Sha
 {
   OdometryInfo detection_odometry_info;
   if (use_dual_graph_) {
-    if (!optimizer_ptr_->checkAddingNewDetection(last_odometry_received_, detection_odometry_info)) {
+    if (!optimizer_ptr_->check_adding_new_detection(last_odometry_received_, detection_odometry_info)) {
       return;
     }
   } else {
-    if (!optimizer_ptr_->generateDetectionOdometryInfo(last_odometry_received_, detection_odometry_info)) {
+    if (!optimizer_ptr_->generate_detection_odometry_info(last_odometry_received_, detection_odometry_info)) {
       return;
     }
   }
@@ -388,11 +385,11 @@ void SemanticSlam::gatePoseCallback(const as2_msgs::msg::PoseStampedWithID::Shar
 {
   OdometryInfo detection_odometry_info;
   if (use_dual_graph_) {
-    if (!optimizer_ptr_->checkAddingNewDetection(last_odometry_received_, detection_odometry_info)) {
+    if (!optimizer_ptr_->check_adding_new_detection(last_odometry_received_, detection_odometry_info)) {
       return;
     }
   } else {
-    if (!optimizer_ptr_->generateDetectionOdometryInfo(last_odometry_received_, detection_odometry_info)) {
+    if (!optimizer_ptr_->generate_detection_odometry_info(last_odometry_received_, detection_odometry_info)) {
       return;
     }
   }
@@ -420,17 +417,17 @@ void SemanticSlam::processGateMsg(
   bool detections_are_absolute = false;
 
   if (csv_logger_) {
-    csv_logger_->logDetection(
+    csv_logger_->log_detection(
       _msg.pose.header.stamp.sec, _msg.pose.header.stamp.nanosec,
       gate_id, "gate", gate_position,
       _detection_odometry_info.odom_ref.translation(), detections_are_absolute);
   }
 
-  GateDetection * gate(new GateDetection(
-      gate_id, gate_position, gate_covariance,
+  Point3DObjectDetection * gate(new Point3DObjectDetection(
+      "gate", gate_id, gate_position, gate_covariance,
       detections_are_absolute));
 
-  optimizer_ptr_->handleNewObjectDetection(gate, _detection_odometry_info);
+  optimizer_ptr_->handle_new_object_detection(gate, _detection_odometry_info);
 }
 
 void SemanticSlam::processArucoMsg(
@@ -468,29 +465,29 @@ void SemanticSlam::processArucoMsg(
   bool detections_are_absolute = false;
 
   if (csv_logger_) {
-    csv_logger_->logDetection(
+    csv_logger_->log_detection(
       _msg.pose.header.stamp.sec, _msg.pose.header.stamp.nanosec,
       aruco_id, "aruco", aruco_pose.translation(),
       _detection_odometry_info.odom_ref.translation(), detections_are_absolute);
   }
 
-  ArucoDetection * aruco(new ArucoDetection(
-      aruco_id, aruco_pose, aruco_covariance,
+  SE3ObjectDetection * aruco(new SE3ObjectDetection(
+      "aruco", aruco_id, aruco_pose, aruco_covariance,
       detections_are_absolute));
 
-  optimizer_ptr_->handleNewObjectDetection(aruco, _detection_odometry_info);
+  optimizer_ptr_->handle_new_object_detection(aruco, _detection_odometry_info);
 }
 
 void SemanticSlam::updateMapOdomTransform(const std_msgs::msg::Header & _header)
 {
   map_odom_transform_msg_ = convertToTransformStamped(
-    optimizer_ptr_->getMapOdomTransform(), estimated_map_frame_, odom_frame_, _header.stamp);
+    optimizer_ptr_->get_map_odom_transform(), estimated_map_frame_, odom_frame_, _header.stamp);
 }
 
 void SemanticSlam::updateEarthMapTransform(const std_msgs::msg::Header & _header)
 {
   earth_map_transform_msg_ = convertToTransformStamped(
-    optimizer_ptr_->getMapTransform(), earth_frame_, estimated_map_frame_, _header.stamp);
+    optimizer_ptr_->get_map_transform(), earth_frame_, estimated_map_frame_, _header.stamp);
 }
 Eigen::Isometry3d SemanticSlam::generatePoseFromMsg(
   const as2_msgs::msg::PoseStampedWithID & _msg)
@@ -567,23 +564,83 @@ void SemanticSlam::visualizeCleanTempGraph()
   viz_temp_markers_pub_->publish(viz_clean_markers_msg);
 }
 
+namespace
+{
+// The published library exposes generic nodes/edges with no visualization API,
+// so markers are built here. Style keys off GraphNode::type_id(): "aruco"
+// (green), "gate" (cyan), and the odom/map nodes (empty type_id -> blue).
+struct VizStyle
+{
+  Eigen::Vector4d color;
+  std::string ns;
+};
+
+VizStyle nodeStyle(const std::string & _type_id)
+{
+  if (_type_id == "aruco") {return {{0.0, 1.0, 0.0, 1.0}, "node/Aruco"};}
+  if (_type_id == "gate") {return {{0.0, 1.0, 1.0, 1.0}, "node/Gate"};}
+  return {{0.0, 0.0, 1.0, 1.0}, "node/Odometry"};
+}
+
+std_msgs::msg::ColorRGBA toColorMsg(Eigen::Vector4d _color, const bool _main)
+{
+  if (!_main) {_color *= 0.5;}
+  std_msgs::msg::ColorRGBA color_msg;
+  color_msg.r = _color[0];
+  color_msg.g = _color[1];
+  color_msg.b = _color[2];
+  color_msg.a = _color[3];
+  return color_msg;
+}
+
+geometry_msgs::msg::Point makePoint(const double _x, const double _y, const double _z)
+{
+  geometry_msgs::msg::Point point;
+  point.x = _x;
+  point.y = _y;
+  point.z = _z;
+  return point;
+}
+}  // namespace
+
 visualization_msgs::msg::MarkerArray SemanticSlam::generateVizNodesMsg(
   std::shared_ptr<GraphG2O> & _graph)
 {
-  bool main = false;
-  std::string viz_frame = earth_frame_;
-  if (_graph->getName() == "Main Graph") {
-    main = true;
-    viz_frame = earth_frame_;
-  }
+  bool main = _graph->get_name() == "Main Graph";
   visualization_msgs::msg::MarkerArray viz_markers_msg;
-  std::vector<GraphNode *> graph_nodes = _graph->getNodes();
-  for (auto & node : graph_nodes) {
-    visualization_msgs::msg::Marker viz_marker_msg = node->getVizMarker(main);
-    viz_marker_msg.header.frame_id = viz_frame;
-    viz_markers_msg.markers.emplace_back(viz_marker_msg);
-    // visualization_msgs::msg::Marker viz_cov_marker_msg = node->getVizCovMarker();
-    // viz_markers_msg.markers.emplace_back(viz_marker_msg);
+  for (auto * node : _graph->get_nodes()) {
+    VizStyle style = nodeStyle(node->type_id());
+    std_msgs::msg::ColorRGBA color = toColorMsg(style.color, main);
+
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id = earth_frame_;
+    marker.ns = style.ns;
+    marker.id = node->get_vertex()->id();
+
+    if (auto * vertex_se3 = dynamic_cast<g2o::VertexSE3 *>(node->get_vertex())) {
+      // Coordinate axes as a LINE_LIST (x longest, then y, then z).
+      marker.type = visualization_msgs::msg::Marker::LINE_LIST;
+      marker.pose = convertToGeometryMsgPose(vertex_se3->estimate());
+      marker.scale.x = 0.05;
+      const double axis = 0.2;
+      marker.points.emplace_back(makePoint(0.0, 0.0, 0.0));
+      marker.points.emplace_back(makePoint(axis * 4, 0.0, 0.0));
+      marker.points.emplace_back(makePoint(0.0, 0.0, 0.0));
+      marker.points.emplace_back(makePoint(0.0, axis * 2, 0.0));
+      marker.points.emplace_back(makePoint(0.0, 0.0, 0.0));
+      marker.points.emplace_back(makePoint(0.0, 0.0, axis));
+      for (int i = 0; i < 6; ++i) {marker.colors.emplace_back(color);}
+    } else if (auto * vertex_point = dynamic_cast<g2o::VertexPointXYZ *>(node->get_vertex())) {
+      marker.type = visualization_msgs::msg::Marker::SPHERE;
+      marker.pose = convertToGeometryMsgPose(Eigen::Vector3d(vertex_point->estimate()));
+      marker.scale.x = 0.5;
+      marker.scale.y = 0.5;
+      marker.scale.z = 0.5;
+      marker.color = color;
+    } else {
+      continue;
+    }
+    viz_markers_msg.markers.emplace_back(marker);
   }
   return viz_markers_msg;
 }
@@ -591,18 +648,54 @@ visualization_msgs::msg::MarkerArray SemanticSlam::generateVizNodesMsg(
 visualization_msgs::msg::MarkerArray SemanticSlam::generateVizEdgesMsg(
   std::shared_ptr<GraphG2O> & _graph)
 {
-  bool main = false;
-  std::string viz_frame = earth_frame_;
-  if (_graph->getName() == "Main Graph") {
-    main = true;
-    viz_frame = earth_frame_;
+  bool main = _graph->get_name() == "Main Graph";
+
+  // Map each g2o vertex to its node's type_id so edges can be coloured by the
+  // detection they connect to (odom-to-odom edges stay blue).
+  std::unordered_map<g2o::HyperGraph::Vertex *, std::string> vertex_type;
+  for (auto * node : _graph->get_nodes()) {
+    vertex_type[node->get_vertex()] = node->type_id();
   }
+
   visualization_msgs::msg::MarkerArray viz_markers_msg;
-  std::vector<GraphEdge *> graph_edges = _graph->getEdges();
-  for (auto & edge : graph_edges) {
-    visualization_msgs::msg::Marker viz_marker_msg = edge->getVizMarker(main);
-    viz_marker_msg.header.frame_id = viz_frame;
-    viz_markers_msg.markers.emplace_back(viz_marker_msg);
+  for (auto * edge : _graph->get_edges()) {
+    g2o::HyperGraph::Edge * g2o_edge = edge->get_edge();
+    if (g2o_edge->vertices().size() < 2) {continue;}
+
+    std::string detection_type;
+    for (auto * vertex : g2o_edge->vertices()) {
+      auto it = vertex_type.find(vertex);
+      if (it != vertex_type.end() && !it->second.empty()) {detection_type = it->second;}
+    }
+    Eigen::Vector4d color = detection_type.empty()
+      ? Eigen::Vector4d(0.0, 0.0, 1.0, 1.0)
+      : Eigen::Vector4d(0.0, 1.0, 0.0, 1.0);
+    std::string ns = detection_type == "gate" ? "edge/Gate"
+      : detection_type == "aruco" ? "edge/Aruco"
+      : "edge/Odometry";
+
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id = earth_frame_;
+    marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    marker.ns = ns;
+    marker.id = g2o_edge->id();
+    marker.scale.x = 0.02;
+    marker.scale.y = 0.02;
+    marker.scale.z = 0.02;
+    marker.color = toColorMsg(color, main);
+
+    for (auto * vertex : g2o_edge->vertices()) {
+      Eigen::Vector3d position;
+      if (auto * vertex_se3 = dynamic_cast<g2o::VertexSE3 *>(vertex)) {
+        position = vertex_se3->estimate().translation();
+      } else if (auto * vertex_point = dynamic_cast<g2o::VertexPointXYZ *>(vertex)) {
+        position = vertex_point->estimate();
+      } else {
+        continue;
+      }
+      marker.points.emplace_back(makePoint(position.x(), position.y(), position.z()));
+    }
+    viz_markers_msg.markers.emplace_back(marker);
   }
   return viz_markers_msg;
 }
@@ -634,13 +727,12 @@ OptimizerG2OParameters SemanticSlam::getOptimizerParameters() {
     "map_odom_security_threshold").as_double();
   optimizer_params.main_graph_odometry_distance_threshold_if_detections = this->get_parameter(
     "main_graph_odometry_distance_threshold_if_detections").as_double();
-  optimizer_params.odometry_is_relative = this->get_parameter("odometry_is_relative").as_bool();
   optimizer_params.generate_odom_map_transform =
     this->get_parameter("generate_odom_map_transform").as_bool();
   generate_odom_map_transform_ = optimizer_params.generate_odom_map_transform;
   optimizer_params.map_odom_transform_alpha = this->get_parameter(
     "map_odom_transform_alpha").as_double();
-  optimizer_params.calculate_odom_covariance_ = this->get_parameter(
+  optimizer_params.calculate_odom_covariance = this->get_parameter(
     "calculate_odom_covariance").as_bool();
   if (this->has_parameter("throttle_detections")) {
     optimizer_params.throttle_detections = this->get_parameter(
@@ -700,7 +792,6 @@ OptimizerG2OParameters SemanticSlam::getOptimizerParameters() {
   auto result = this->list_parameters({"fixed_objects"}, 3);
   parseFixedObjects(result, fixed_objects, optimizer_params);
 
-  WARN("odometry_is_relative not implemented yet");
   WARN("map_odom_security_threshold not implemented yet");
 
   return optimizer_params;
@@ -767,10 +858,12 @@ void SemanticSlam::parseFixedObjects(
     }
     FixedObject fixed_object;
     fixed_object.id = id;
-    fixed_object.type = data.first;
+    std::string object_type = data.first;
     if (!force_object_type_.empty()) {
-      fixed_object.type = force_object_type_;
+      object_type = force_object_type_;
     }
+    fixed_object.kind =
+      (object_type == "gate") ? FixedObject::Kind::Point3D : FixedObject::Kind::SE3;
     Eigen::Vector3d object_position =
       Eigen::Vector3d(data.second[0], data.second[1], data.second[2]);
     double yaw = data.second[3];
@@ -811,4 +904,32 @@ Eigen::Isometry3d SemanticSlam::getOdometryFromOpenVins(const nav_msgs::msg::Odo
     odom_pose.header.frame_id = odom_frame_;
     odom_pose.child_frame_id = robot_frame_;
     return convertToIsometry3d(odom_pose.pose.pose);
+}
+
+void SemanticSlam::dumpEstimatedObjects()
+{
+  if (!optimizer_ptr_ || !optimizer_ptr_->main_graph) {
+    return;
+  }
+  std::ofstream file("slam_estimated_objects.csv");
+  if (!file.is_open()) {
+    return;
+  }
+  file << "id,type,x,y,z,qx,qy,qz,qw\n";
+  for (const auto &[id, node] : optimizer_ptr_->main_graph->get_object_nodes()) {
+    if (auto * vertex_se3 = dynamic_cast<g2o::VertexSE3 *>(node->get_vertex())) {
+      Eigen::Isometry3d estimate = vertex_se3->estimate();
+      Eigen::Vector3d position = estimate.translation();
+      Eigen::Quaterniond orientation(estimate.rotation());
+      file << id << "," << node->type_id() << ","
+           << position.x() << "," << position.y() << "," << position.z() << ","
+           << orientation.x() << "," << orientation.y() << ","
+           << orientation.z() << "," << orientation.w() << "\n";
+    } else if (auto * vertex_point = dynamic_cast<g2o::VertexPointXYZ *>(node->get_vertex())) {
+      Eigen::Vector3d position = vertex_point->estimate();
+      file << id << "," << node->type_id() << ","
+           << position.x() << "," << position.y() << "," << position.z()
+           << ",0,0,0,1\n";
+    }
+  }
 }

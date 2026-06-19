@@ -1,16 +1,20 @@
 [package]
 name = "ros-humble-dual-pose-graph"
-version = "1.0.6"
+version = "0.1.1"
 
 [package.build]
 backend = { name = "pixi-build-ros", version = "*" }
 
 [package.build.config]
 extra-package-mappings = [
-    { g2o = { ros = ["libg2o"] } },
     { as2_core = { conda = ["as2_core"] } },
     { as2_msgs = { conda = ["as2_msgs"] } },
     { libfmt = { conda = ["fmt"] } },
-    { ceres = { conda = ["ceres-solver"] } },
     { GeographicLib = { conda = ["geographiclib-cpp"] } },
 ]
+
+[package.host-dependencies]
+dual_pose_graph = ">=0.1"
+
+[package.run-dependencies]
+dual_pose_graph = ">=0.1"

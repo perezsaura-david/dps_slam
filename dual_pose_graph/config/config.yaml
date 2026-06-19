@@ -15,7 +15,6 @@
     main_graph_odometry_orientation_threshold: 5.0
     temp_graph_odometry_distance_threshold: 0.1
     temp_graph_odometry_orientation_threshold: 0.1
-    odometry_is_relative: false
     generate_odom_map_transform: true
     earth_to_map:
       x: 0.407898

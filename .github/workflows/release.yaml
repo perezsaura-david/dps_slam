@@ -1,0 +1,91 @@
+name: release
+
+run-name: "release ${{ github.ref_name }}"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build-${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-64
+            os: ubuntu-latest
+          - platform: linux-aarch64
+            os: ubuntu-24.04-arm
+          - platform: osx-arm64
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: latest
+          cache: true
+
+      - name: Build conda package
+        run: pixi build --path dual_pose_graph --output-dir dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ros-humble-dual-pose-graph-${{ matrix.platform }}
+          path: dist/*.conda
+          if-no-files-found: error
+
+  github-release:
+    name: github-release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate release notes
+        id: git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.conda
+          body: ${{ steps.git-cliff.outputs.content }}
+
+  prefix-dev:
+    name: prefix-dev
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: latest
+          run-install: false
+
+      - name: Install rattler-build
+        run: pixi global install rattler-build
+
+      - name: Upload to prefix.dev
+        run: rattler-build upload prefix --channel dual-pose-graph artifacts/*.conda
+        env:
+          PREFIX_API_KEY: ${{ secrets.PREFIX_DEV_API_KEY }}

@@ -47,13 +47,8 @@ include_directories(
   include/${PROJECT_NAME}
 )
 
-# G2O (depends on ceres which depends on glog)
-find_package(glog REQUIRED)
-find_package(G2O REQUIRED)
-include_directories(SYSTEM ${G2O_INCLUDE_DIR} ${G2O_INCLUDE_DIRS})
-link_directories(${G2O_LIBRARY_DIRS})
-#EIGEN
-include_directories("/usr/include/eigen3")
+# dual_pose_graph brings g2o, glog, ceres and Eigen transitively.
+find_package(dual_pose_graph CONFIG REQUIRED)
 #FMT
 set(FMT_LIBRARIES fmt::fmt)
 
@@ -112,9 +107,6 @@ install(
 set(SOURCE_CPP_FILES
   src/semantic_slam_node.cpp
   src/semantic_slam.cpp
-  src/optimizer_g2o.cpp
-  src/graph_g2o.cpp
-  src/g2o_edge_types.cpp
   src/conversions.cpp
   src/debug_utils.cpp)
 
@@ -126,15 +118,7 @@ target_include_directories(${PROJECT_NAME}_node PUBLIC
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(${PROJECT_NAME}_node ${PROJECT_DEPENDENCIES})
 target_link_libraries(${PROJECT_NAME}_node
-                      glog::glog
-                      ${G2O_TYPES_DATA}
-                      ${G2O_CORE_LIBRARY}
-                      ${G2O_STUFF_LIBRARY}
-                      ${G2O_SOLVER_PCG}
-                      ${G2O_SOLVER_CSPARSE}   # be aware of that CSPARSE is released under LGPL
-                      ${G2O_SOLVER_CHOLMOD}   # be aware of that cholmod is released under GPL
-                      ${G2O_TYPES_SLAM3D}
-                      ${G2O_TYPES_SLAM3D_ADDONS}
+                      dual_pose_graph::dual_pose_graph
                       ${FMT_LIBRARIES}
 )
 

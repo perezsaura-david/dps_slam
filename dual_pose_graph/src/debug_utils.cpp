@@ -36,13 +36,12 @@
  */
 
 #include "utils/debug_utils.hpp"
-#include <Eigen/src/Core/Matrix.h>
 #include <g2o/core/sparse_block_matrix.h>
 #include <g2o/types/slam3d/vertex_pointxyz.h>
 
 void debugGraphVertices(std::shared_ptr<GraphG2O> _graph)
 {
-  FLAG("Debugging vertices in " << _graph->getName());
+  FLAG("Debugging vertices in " << _graph->get_name());
   for (auto p : _graph->graph_->vertices()) {
     int id = p.first;
 

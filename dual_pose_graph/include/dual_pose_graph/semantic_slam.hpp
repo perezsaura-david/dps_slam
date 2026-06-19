@@ -37,19 +37,19 @@
  *              All Rights Reserved
  ********************************************************************************/
 
-#ifndef AS2_SLAM__SEMANTIC_SLAM_HPP_
-#define AS2_SLAM__SEMANTIC_SLAM_HPP_
+#ifndef DPS_SLAM__SEMANTIC_SLAM_HPP_
+#define DPS_SLAM__SEMANTIC_SLAM_HPP_
 
 // ROS2
 #include <Eigen/Dense>
-#include <Eigen/src/Geometry/Transform.h>
-#include <geometry_msgs/msg/detail/pose_with_covariance__struct.hpp>
-#include <geometry_msgs/msg/detail/pose_with_covariance_stamped__struct.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/transform_broadcaster.h>
-#include <string>
+#include <map>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 // ROS2 MSGS
 #include <as2_msgs/msg/pose_stamped_with_id.hpp>
 #include <as2_msgs/msg/pose_stamped_with_id_array.hpp>
@@ -57,18 +57,20 @@
 #include <nav_msgs/msg/path.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <std_msgs/msg/header.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 
 #include <as2_core/node.hpp>
 #include "dual_pose_graph/optimizer_g2o.hpp"
 #include "utils/conversions.hpp"
-#include "utils/csv_logger.hpp"
+#include "dual_pose_graph/utils/csv_logger.hpp"
 
 class SemanticSlam : public as2::Node
 {
 public:
   SemanticSlam(rclcpp::NodeOptions & options);
-  ~SemanticSlam() {}
+  ~SemanticSlam() {dumpEstimatedObjects();}
   void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
   void poseStampedCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
@@ -89,6 +91,7 @@ private:
   void visualizeCleanTempGraph();
   void visualizeMainGraph();
   void visualizeTempGraph();
+  void dumpEstimatedObjects();
 
   visualization_msgs::msg::MarkerArray generateVizNodesMsg(std::shared_ptr<GraphG2O> & _graph);
   visualization_msgs::msg::MarkerArray generateVizEdgesMsg(std::shared_ptr<GraphG2O> & _graph);
@@ -182,4 +185,4 @@ public:
   // plugin_ptr_; std::shared_ptr<tf2_ros::TransformBroadcaster>
 };
 
-#endif  // AS2_SLAM__SEMANTIC_SLAM_HPP_
+#endif  // DPS_SLAM__SEMANTIC_SLAM_HPP_

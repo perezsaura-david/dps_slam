@@ -37,8 +37,8 @@
  *              All Rights Reserved
  ********************************************************************************/
 
-#ifndef UTILS__DEBUG_UTILS_HPP_
-#define UTILS__DEBUG_UTILS_HPP_
+#ifndef DPS_SLAM__UTILS__DEBUG_UTILS_HPP_
+#define DPS_SLAM__UTILS__DEBUG_UTILS_HPP_
 
 #include <memory>
 #include "dual_pose_graph/graph_g2o.hpp"
@@ -56,4 +56,4 @@
 void debugGraphVertices(std::shared_ptr<GraphG2O> _graph);
 void debugComputeCovariance(const g2o::SparseBlockMatrix<Eigen::MatrixXd> & _spinv, int _node_id);
 
-#endif  // UTILS__DEBUG_UTILS_HPP_
+#endif  // DPS_SLAM__UTILS__DEBUG_UTILS_HPP_
