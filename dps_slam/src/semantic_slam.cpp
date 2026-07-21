@@ -292,28 +292,16 @@ void SemanticSlam::processOdometryReceived(
   }
 
   if (visualize_graphs_) {
-    // Publish corrected Path: rebuilt from main_graph's actual current per-keyframe
-    // pose estimates, so it reflects whatever a loop-closure edge has pulled earlier
-    // keyframes toward, not just the latest sample.
-    std::vector<Eigen::Isometry3d> keyframe_poses = optimizer_ptr_->getMainGraphKeyframePoses();
-    std::vector<Eigen::Isometry3d> keyframe_raw_poses = optimizer_ptr_->getMainGraphKeyframeRawPoses();
-    nav_msgs::msg::Path corrected_path_msg;
+    // Publish corrected Path: one point per odometry tick (dense, real-time), each
+    // stamped with the latest overall correction. z/x/y/orientation here already
+    // reflect the height-pinning and xy/yaw restriction applied upstream to
+    // map_transform/map_odom_transform, so this stays correct on those axes; it just
+    // can't show a loop closure's differential effect on older trajectory segments
+    // the way reading main_graph's per-keyframe poses directly would.
+    static nav_msgs::msg::Path corrected_path_msg;
     corrected_path_msg.header.stamp = _header.stamp;
     corrected_path_msg.header.frame_id = earth_frame_;
-    corrected_path_msg.poses.reserve(keyframe_poses.size());
-    for (size_t i = 0; i < keyframe_poses.size(); ++i) {
-      // z is already pinned at the graph level (HeightPriorEdge); this is a cheap
-      // exact safety net against float-level slack from that being a finite weight.
-      Eigen::Isometry3d display_pose = keyframe_poses[i];
-      if (restrict_map_odom_correction_to_xy_yaw_ && i < keyframe_raw_poses.size()) {
-        display_pose.translation().z() = keyframe_raw_poses[i].translation().z();
-      }
-      geometry_msgs::msg::PoseStamped keyframe_pose_msg;
-      keyframe_pose_msg.header.stamp = _header.stamp;
-      keyframe_pose_msg.header.frame_id = earth_frame_;
-      keyframe_pose_msg.pose = convertToGeometryMsgPose(map_transform * display_pose);
-      corrected_path_msg.poses.push_back(keyframe_pose_msg);
-    }
+    corrected_path_msg.poses.emplace_back(pose_stamped_msg);
     corrected_path_pub_->publish(corrected_path_msg);
   }
 }
