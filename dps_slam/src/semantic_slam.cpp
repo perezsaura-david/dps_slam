@@ -179,25 +179,39 @@ SemanticSlam::SemanticSlam(rclcpp::NodeOptions & options)
   std_msgs::msg::Header header;
   header.stamp = this->now();
   updateMapOdomTransform(header);
-  tf_broadcaster_->sendTransform(map_odom_transform_msg_);
   updateEarthMapTransform(header);
-  tf_broadcaster_->sendTransform(earth_map_transform_msg_);
   // Callback group
   tf_callback_group_ = this->create_callback_group(
     rclcpp::CallbackGroupType::MutuallyExclusive);
-    if (!generate_odom_map_transform_) {return;}
-    // Create a timer to publish the transform at a fixed rate
-    tf_publish_timer_ = this->create_timer(
-      std::chrono::duration<double>(1.0 / 100.0),
-      [this]() {
+
+  // Broadcast the map<->odom and earth<->map transforms on a repeating timer.
+  // The constructor runs before the executor starts spinning, so with
+  // use_sim_time=true this node's clock cannot have processed a /clock
+  // message yet at this point; publishing here with this->now() would stamp
+  // the transform with real wall-clock time instead of sim time, which then
+  // gets permanently rejected as "old" by every TF listener once
+  // correctly-stamped sim-time updates start arriving. Wait for the clock to
+  // be live before the first publish.
+  bool sim_time_requested = this->get_parameter("use_sim_time").as_bool();
+  tf_publish_timer_ = this->create_timer(
+    std::chrono::duration<double>(1.0 / 100.0),
+    [this, sim_time_requested]() {
+      if (sim_time_requested && !this->get_clock()->ros_time_is_active()) {
+        return;  // clock not live yet; try again next tick
+      }
+      if (generate_odom_map_transform_) {
         optimizer_ptr_->updateOdomMapTransform();
-        std_msgs::msg::Header header;
-        header.stamp = this->now();
-        updateMapOdomTransform(header);
-        tf_broadcaster_->sendTransform(map_odom_transform_msg_);
-        updateEarthMapTransform(header);
-        tf_broadcaster_->sendTransform(earth_map_transform_msg_);
-      },
+      }
+      std_msgs::msg::Header header;
+      header.stamp = this->now();
+      updateMapOdomTransform(header);
+      tf_broadcaster_->sendTransform(map_odom_transform_msg_);
+      updateEarthMapTransform(header);
+      tf_broadcaster_->sendTransform(earth_map_transform_msg_);
+      if (!generate_odom_map_transform_) {
+        tf_publish_timer_->cancel();  // one-shot when correction is disabled
+      }
+    },
     tf_callback_group_);
 
 }
@@ -625,7 +639,7 @@ void SemanticSlam::processLineDetection(
     plane_covariance(0, 0) = detection_covariance_factor_;
     plane_covariance(2, 2) = detection_covariance_factor_;
   }
-  plane_covariance(1, 1) = 1e-6;  // elevation: assert verticality
+  plane_covariance(1, 1) = 1e-3;  // elevation: assert verticality
 
   bool detections_are_absolute = false;
 
@@ -856,6 +870,12 @@ OptimizerG2OParameters SemanticSlam::getOptimizerParameters() {
     optimizer_params.use_dual_graph = true;
   }
   use_dual_graph_ = optimizer_params.use_dual_graph;
+
+  if (this->has_parameter("robust_kernel_delta")) {
+    optimizer_params.robust_kernel_delta = this->get_parameter("robust_kernel_delta").as_double();
+  } else {
+    optimizer_params.robust_kernel_delta = 3.0;
+  }
 
   double earth_to_map_x = 0.0;
   double earth_to_map_y = 0.0;

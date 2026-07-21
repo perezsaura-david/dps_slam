@@ -69,6 +69,7 @@ struct OptimizerG2OParameters
   bool calculate_odom_covariance_;
   bool throttle_detections;
   bool use_dual_graph;
+  double robust_kernel_delta;  // Huber delta applied to every graph edge
   Eigen::Isometry3d earth_to_map_transform;
   std::vector<FixedObject> fixed_objects;
 };
@@ -85,8 +86,10 @@ public:
   std::shared_ptr<GraphG2O> temp_graph;
   std::mutex graph_mutex_;
   void setParameters(const OptimizerG2OParameters & _params);
-  Eigen::Isometry3d getOptimizedPose();
-  Eigen::Isometry3d getOptimizedMapPose();
+  // Thread-safe: acquire graph_mutex_ internally. earth_map_transform_/map_odom_tranform_
+  // and the main graph's optimized vertex estimates are read/written from both the
+  // odometry-callback thread and the 100 Hz TF-publish timer thread (separate callback
+  // groups under the MultiThreadedExecutor), so these must not be read unlocked.
   Eigen::Isometry3d getMapOdomTransform();
   Eigen::Isometry3d getMapTransform();
   Eigen::Isometry3d filterTransform(Eigen::Isometry3d _last_transform, Eigen::Isometry3d _new_transform);
@@ -112,6 +115,11 @@ public:
     OdometryInfo & _detection_odometry_info);
 
 private:
+  // Precondition: graph_mutex_ must already be held by the caller.
+  Eigen::Isometry3d getOptimizedPose();
+  Eigen::Isometry3d getOptimizedMapPose();
+  void updateOdomMapTransformLocked();
+
   bool first_odom_ = true;
   bool temp_graph_generated_ = false;
   bool init_main_graph_ = true;
@@ -138,6 +146,7 @@ private:
   bool calculate_odom_covariance_ = false;
   bool throttle_detections_ = true;
   bool use_dual_graph_ = true;
+  double robust_kernel_delta_ = 3.0;
   std::vector<FixedObject> fixed_objects_;
   std::unordered_set<std::string> detections_since_last_keyframe_;
   CsvLogger * csv_logger_ = nullptr;

@@ -41,6 +41,7 @@
 #include <Eigen/src/Core/util/IndexedViewHelper.h>
 #include <Eigen/src/Geometry/Transform.h>
 #include <g2o/core/optimization_algorithm_factory.h>
+#include <g2o/core/robust_kernel_impl.h>
 
 #include <g2o/core/parameter.h>
 #include <g2o/types/slam3d/parameter_se3_offset.h>
@@ -196,6 +197,11 @@ void GraphG2O::addNode(GraphNode & _node)
   graph_nodes_.emplace_back(&_node);
 }
 
+void GraphG2O::setRobustKernelDelta(double _delta)
+{
+  robust_kernel_delta_ = _delta;
+}
+
 void GraphG2O::addEdge(GraphEdge & _edge)
 {
   int id = n_edges_++;
@@ -208,6 +214,16 @@ void GraphG2O::addEdge(GraphEdge & _edge)
     return;
   }
   _edge.getEdge()->setId(id);
+
+  auto * optimizable_edge = dynamic_cast<g2o::OptimizableGraph::Edge *>(_edge.getEdge());
+  if (optimizable_edge) {
+    g2o::RobustKernelHuber * robust_kernel = new g2o::RobustKernelHuber();
+    robust_kernel->setDelta(robust_kernel_delta_);
+    optimizable_edge->setRobustKernel(robust_kernel);
+  } else {
+    WARN_GRAPH("Edge is not an OptimizableGraph::Edge, robust kernel not set");
+  }
+
   if (!graph_->addEdge(_edge.getEdge())) {
     WARN_GRAPH("Edge not added");
     return;

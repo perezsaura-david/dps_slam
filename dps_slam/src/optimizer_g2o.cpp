@@ -301,37 +301,41 @@ bool OptimizerG2O::handleNewOdom(
   if (temp_graph_generated_ && temp_graph) {
     temp_graph.reset();
     temp_graph = std::make_shared<GraphG2O>("Temp Graph");
+    temp_graph->setRobustKernelDelta(robust_kernel_delta_);
     temp_graph_generated_ = false;
   }
   graph_mutex_.unlock();
   } // use_dual_graph_
 
-  double chi2_before = main_graph->graph_->chi2();
-  auto opt_start = std::chrono::steady_clock::now();
-  main_graph->optimizeGraph();
-  auto opt_end = std::chrono::steady_clock::now();
-  double chi2_after = main_graph->graph_->chi2();
-  double opt_ms = std::chrono::duration<double, std::milli>(opt_end - opt_start).count();
+  // Everything below reads/mutates main_graph's optimized vertex estimates and
+  // earth_map_transform_/map_odom_tranform_, which the 100 Hz TF-publish timer
+  // thread also reads via updateOdomMapTransform()/getMapTransform()/
+  // getMapOdomTransform(). Hold graph_mutex_ for the whole span so the timer
+  // thread can never observe main_graph mid-optimize or a torn transform.
+  {
+    std::lock_guard<std::mutex> lock(graph_mutex_);
 
-  if (generate_odom_map_transform_) {
-    updateOdomMapTransform();
-  }
+    double chi2_before = main_graph->graph_->chi2();
+    auto opt_start = std::chrono::steady_clock::now();
+    main_graph->optimizeGraph();
+    auto opt_end = std::chrono::steady_clock::now();
+    double chi2_after = main_graph->graph_->chi2();
+    double opt_ms = std::chrono::duration<double, std::milli>(opt_end - opt_start).count();
 
-  int temp_nodes = 0, temp_edges = 0;
-  if (use_dual_graph_ && temp_graph) {
-    temp_nodes = static_cast<int>(temp_graph->graph_->vertices().size());
-    temp_edges = static_cast<int>(temp_graph->graph_->edges().size());
-  }
+    if (generate_odom_map_transform_) {
+      updateOdomMapTransformLocked();
+    }
 
-  if (csv_logger_) {
-    auto optimized = getOptimizedPose();
-    auto corrected = earth_map_transform_ * map_odom_tranform_ * last_odometry_added_.odometry;
-    csv_logger_->logKeyframe(0, 0,
-      last_odometry_added_.odometry,
-      static_cast<int>(main_graph->graph_->vertices().size()),
-      static_cast<int>(main_graph->graph_->edges().size()),
-      chi2_before, chi2_after, opt_ms,
-      map_odom_tranform_, optimized, corrected);
+    if (csv_logger_) {
+      auto optimized = getOptimizedPose();
+      auto corrected = earth_map_transform_ * map_odom_tranform_ * last_odometry_added_.odometry;
+      csv_logger_->logKeyframe(0, 0,
+        last_odometry_added_.odometry,
+        static_cast<int>(main_graph->graph_->vertices().size()),
+        static_cast<int>(main_graph->graph_->edges().size()),
+        chi2_before, chi2_after, opt_ms,
+        map_odom_tranform_, optimized, corrected);
+    }
   }
 
   return true;
@@ -438,6 +442,11 @@ void OptimizerG2O::setParameters(const OptimizerG2OParameters & _params)
   calculate_odom_covariance_ = _params.calculate_odom_covariance_;
   throttle_detections_ = _params.throttle_detections;
   use_dual_graph_ = _params.use_dual_graph;
+  robust_kernel_delta_ = _params.robust_kernel_delta;
+  main_graph->setRobustKernelDelta(robust_kernel_delta_);
+  if (temp_graph) {
+    temp_graph->setRobustKernelDelta(robust_kernel_delta_);
+  }
 
   PARAM(PRINT_VAR(main_graph_odometry_distance_threshold_));
   PARAM(PRINT_VAR(temp_graph_odometry_distance_threshold_));
@@ -445,6 +454,7 @@ void OptimizerG2O::setParameters(const OptimizerG2OParameters & _params)
   PARAM(PRINT_VAR(map_odom_transform_alpha_));
   PARAM(PRINT_VAR(calculate_odom_covariance_));
   PARAM(PRINT_VAR(use_dual_graph_));
+  PARAM(PRINT_VAR(robust_kernel_delta_));
 
   Eigen::MatrixXd earth_to_map_covariance_ = Eigen::MatrixXd::Identity(6, 6) * 0.0001;
   earth_to_map_covariance_(5, 5) = 0.1;
@@ -464,6 +474,12 @@ void OptimizerG2O::setParameters(const OptimizerG2OParameters & _params)
 }
 
 void OptimizerG2O::updateOdomMapTransform()
+{
+  std::lock_guard<std::mutex> lock(graph_mutex_);
+  updateOdomMapTransformLocked();
+}
+
+void OptimizerG2O::updateOdomMapTransformLocked()
 {
   earth_map_transform_ = getOptimizedMapPose();
 
@@ -510,11 +526,13 @@ Eigen::Isometry3d OptimizerG2O::getOptimizedMapPose()
 
 Eigen::Isometry3d OptimizerG2O::getMapOdomTransform()
 {
+  std::lock_guard<std::mutex> lock(graph_mutex_);
   return map_odom_tranform_;
 }
 
 Eigen::Isometry3d OptimizerG2O::getMapTransform()
 {
+  std::lock_guard<std::mutex> lock(graph_mutex_);
   return earth_map_transform_;
 }
 

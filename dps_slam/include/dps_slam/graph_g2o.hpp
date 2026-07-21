@@ -93,6 +93,11 @@ public:
   bool optimizeGraph();
   void setFixedObjects(const std::vector<FixedObject> & _fixed_objects);
   void initGraph(const Eigen::Isometry3d & _initial_pose = Eigen::Isometry3d::Identity());
+  // Huber delta applied to every edge added from now on (addEdge()). Without a robust
+  // kernel, a single mismatched/outlier observation has unbounded influence on the
+  // optimized trajectory under plain least-squares. Needs empirical tuning against
+  // real data; roughly, smaller = rejects outliers more aggressively.
+  void setRobustKernelDelta(double _delta);
   std::shared_ptr<g2o::SparseOptimizer> graph_;  // g2o graph
 
   std::unordered_map<std::string, GraphNode *> obj_id2node_;
@@ -106,6 +111,7 @@ private:
   OdomNode * map_node_;
   std::vector<GraphNode *> graph_nodes_;
   std::vector<GraphEdge *> graph_edges_;
+  double robust_kernel_delta_ = 3.0;
 };
 
 #endif  // AS2_SLAM__GRAPH_G2O_HPP_
