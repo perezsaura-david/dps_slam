@@ -97,6 +97,16 @@ GraphG2O::GraphG2O(std::string _name)
 
 std::string GraphG2O::getName() {return name_;}
 std::vector<GraphNode *> GraphG2O::getNodes() {return graph_nodes_;}
+std::vector<Eigen::Isometry3d> GraphG2O::getOdomKeyframePoses()
+{
+  std::vector<Eigen::Isometry3d> poses;
+  poses.reserve(odom_keyframes_.size());
+  for (auto * node : odom_keyframes_) {
+    poses.push_back(node->getPose());
+  }
+  return poses;
+}
+std::vector<Eigen::Isometry3d> GraphG2O::getOdomKeyframeRawPoses() {return odom_keyframe_raw_poses_;}
 std::vector<GraphEdge *> GraphG2O::getEdges() {return graph_edges_;}
 std::unordered_map<std::string, GraphNode *> GraphG2O::getObjectNodes() {return obj_id2node_;}
 OdomNode * GraphG2O::getLastOdomNode() {return last_odom_node_;}
@@ -139,6 +149,8 @@ void GraphG2O::initGraph(const Eigen::Isometry3d & _initial_pose)
   fixed_node->setFixed();
   addNode(*fixed_node);
   last_odom_node_ = fixed_node;
+  odom_keyframes_.push_back(fixed_node);
+  odom_keyframe_raw_poses_.push_back(node_pose);
 }
 
 bool GraphG2O::optimizeGraph()
@@ -202,6 +214,11 @@ void GraphG2O::setRobustKernelDelta(double _delta)
   robust_kernel_delta_ = _delta;
 }
 
+void GraphG2O::setRestrictKeyframeHeightToOdometry(bool _restrict)
+{
+  restrict_keyframe_height_to_odometry_ = _restrict;
+}
+
 void GraphG2O::addEdge(GraphEdge & _edge)
 {
   int id = n_edges_++;
@@ -248,7 +265,24 @@ void GraphG2O::addNewKeyframe(
     return;
   }
   addEdge(*odom_edge);
+
+  if (restrict_keyframe_height_to_odometry_) {
+    // Index 2 (z) of EdgeSE3Prior's error is a plain translation delta, decoupled
+    // from rotation, so this pins only z to _absolute_pose -- x, y, and orientation
+    // stay free for the rest of the graph to determine.
+    Eigen::MatrixXd height_information = Eigen::MatrixXd::Zero(6, 6);
+    height_information(2, 2) = 1e6;
+    HeightPriorEdge * height_prior_edge(new HeightPriorEdge(
+        odom_node, _absolute_pose, height_information));
+    addEdge(*height_prior_edge);
+    // This is a hard constraint, not a fallible observation; addEdge() attaches a
+    // Huber kernel by default, which would cap its pull after a few mm of residual.
+    height_prior_edge->getEdgeSE3Prior()->setRobustKernel(nullptr);
+  }
+
   last_odom_node_ = odom_node;
+  odom_keyframes_.push_back(odom_node);
+  odom_keyframe_raw_poses_.push_back(_absolute_pose);
 }
 
 void GraphG2O::addNewObjectDetection(

@@ -46,6 +46,7 @@
 #include <Eigen/src/Core/Matrix.h>
 #include <g2o/core/hyper_graph.h>
 #include <g2o/types/slam3d/edge_se3_pointxyz.h>
+#include <g2o/types/slam3d/edge_se3_prior.h>
 #include <g2o/types/slam3d/types_slam3d.h>
 #include <g2o/types/slam3d/vertex_pointxyz.h>
 #include <g2o/types/slam3d/vertex_se3.h>
@@ -375,6 +376,104 @@ public:
 protected:
   std::string edge_name_ = "Odometry";
   Eigen::Vector4d viz_color_ = {0.0, 0.0, 1.0, 1.0};
+  std::string getEdgeName() override {return edge_name_;}
+  Eigen::Vector4d getVizColor() override {return viz_color_;}
+};
+
+// Unary prior on a single SE3 vertex, pinning it toward a measurement pose. Give a
+// DOF near-infinite information to lock it, zero to leave it fully free -- lets
+// specific DOF of a vertex's absolute estimate be excluded from optimization without
+// a custom reduced-DOF vertex type.
+class GraphEdgeSE3Prior : public GraphEdge
+{
+public:
+  GraphEdgeSE3Prior(
+    GraphNodeSE3 * _node,
+    const Eigen::Isometry3d & _measurement,
+    const Eigen::MatrixXd & _information_matrix)
+  {
+    if (_information_matrix.size() == 0) {
+      WARN("Information Matrix Empty");
+    }
+    if (_node == nullptr) {
+      ERROR("Node is null");
+      return;
+    }
+    edge_ = new g2o::EdgeSE3Prior();
+    edge_->setParameterId(0, 0);
+    edge_->setMeasurement(_measurement);
+    edge_->setInformation(_information_matrix);
+    edge_->vertices()[0] = _node->getVertexSE3();
+  }
+  ~GraphEdgeSE3Prior() {}
+
+  g2o::HyperGraph::Edge * getEdge() override
+  {
+    return static_cast<g2o::HyperGraph::Edge *>(edge_);
+  }
+
+  g2o::EdgeSE3Prior * getEdgeSE3Prior() {return edge_;}
+
+  visualization_msgs::msg::Marker getVizMarker(const bool _main) override
+  {
+    visualization_msgs::msg::Marker edge_marker_msg;
+    edge_marker_msg.type = visualization_msgs::msg::Marker::POINTS;
+    edge_marker_msg.ns = getVizMarkerNamespace();
+    edge_marker_msg.id = edge_->id();
+    edge_marker_msg.scale.x = 0.02;
+    edge_marker_msg.scale.y = 0.02;
+    Eigen::Vector4d color = getVizMarkerColor(_main);
+    edge_marker_msg.color.r = color[0];
+    edge_marker_msg.color.g = color[1];
+    edge_marker_msg.color.b = color[2];
+    edge_marker_msg.color.a = color[3];
+    g2o::VertexSE3 * node_se3 = dynamic_cast<g2o::VertexSE3 *>(getEdge()->vertices()[0]);
+    auto position = node_se3->estimate().translation();
+    geometry_msgs::msg::Point point;
+    point.x = position.x();
+    point.y = position.y();
+    point.z = position.z();
+    edge_marker_msg.points.emplace_back(point);
+    return edge_marker_msg;
+  }
+
+protected:
+  std::string getEdgeName() override {return edge_name_;}
+  std::string getVizMarkerNamespace() override
+  {
+    return element_name_ + "/" + getEdgeName();
+  }
+  virtual Eigen::Vector4d getVizColor() override {return viz_color_;}
+  Eigen::Vector4d getVizMarkerColor(const bool _main) override
+  {
+    if (_main) {
+      return getVizColor();
+    } else {
+      return getVizColor() * 0.5;
+    }
+  }
+
+  g2o::EdgeSE3Prior * edge_;
+  std::string element_name_ = "edge";
+  std::string edge_name_ = "SE3Prior";
+  Eigen::Vector4d viz_color_ = {0.5, 0.5, 0.5, 1.0};
+};
+
+// Pins a keyframe's z to the raw odometry pose it was created from. Walls carry no
+// height information, so without this a wall-driven yaw/xy correction elsewhere in
+// the odometry chain could still leak into z through SE3's coupled residual.
+class HeightPriorEdge : public GraphEdgeSE3Prior
+{
+public:
+  HeightPriorEdge(
+    GraphNodeSE3 * _node,
+    const Eigen::Isometry3d & _measurement,
+    const Eigen::MatrixXd & _information_matrix)
+  : GraphEdgeSE3Prior(_node, _measurement, _information_matrix) {}
+
+protected:
+  std::string edge_name_ = "HeightPrior";
+  Eigen::Vector4d viz_color_ = {0.5, 0.5, 0.5, 1.0};
   std::string getEdgeName() override {return edge_name_;}
   Eigen::Vector4d getVizColor() override {return viz_color_;}
 };

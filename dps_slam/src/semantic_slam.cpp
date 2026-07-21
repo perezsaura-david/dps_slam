@@ -292,11 +292,28 @@ void SemanticSlam::processOdometryReceived(
   }
 
   if (visualize_graphs_) {
-    // Publish corrected Path
-    static nav_msgs::msg::Path corrected_path_msg;
+    // Publish corrected Path: rebuilt from main_graph's actual current per-keyframe
+    // pose estimates, so it reflects whatever a loop-closure edge has pulled earlier
+    // keyframes toward, not just the latest sample.
+    std::vector<Eigen::Isometry3d> keyframe_poses = optimizer_ptr_->getMainGraphKeyframePoses();
+    std::vector<Eigen::Isometry3d> keyframe_raw_poses = optimizer_ptr_->getMainGraphKeyframeRawPoses();
+    nav_msgs::msg::Path corrected_path_msg;
     corrected_path_msg.header.stamp = _header.stamp;
     corrected_path_msg.header.frame_id = earth_frame_;
-    corrected_path_msg.poses.emplace_back(pose_stamped_msg);
+    corrected_path_msg.poses.reserve(keyframe_poses.size());
+    for (size_t i = 0; i < keyframe_poses.size(); ++i) {
+      // z is already pinned at the graph level (HeightPriorEdge); this is a cheap
+      // exact safety net against float-level slack from that being a finite weight.
+      Eigen::Isometry3d display_pose = keyframe_poses[i];
+      if (restrict_map_odom_correction_to_xy_yaw_ && i < keyframe_raw_poses.size()) {
+        display_pose.translation().z() = keyframe_raw_poses[i].translation().z();
+      }
+      geometry_msgs::msg::PoseStamped keyframe_pose_msg;
+      keyframe_pose_msg.header.stamp = _header.stamp;
+      keyframe_pose_msg.header.frame_id = earth_frame_;
+      keyframe_pose_msg.pose = convertToGeometryMsgPose(map_transform * display_pose);
+      corrected_path_msg.poses.push_back(keyframe_pose_msg);
+    }
     corrected_path_pub_->publish(corrected_path_msg);
   }
 }
@@ -858,6 +875,13 @@ OptimizerG2OParameters SemanticSlam::getOptimizerParameters() {
     "map_odom_transform_alpha").as_double();
   optimizer_params.calculate_odom_covariance_ = this->get_parameter(
     "calculate_odom_covariance").as_bool();
+  if (this->has_parameter("restrict_map_odom_correction_to_xy_yaw")) {
+    optimizer_params.restrict_map_odom_correction_to_xy_yaw = this->get_parameter(
+      "restrict_map_odom_correction_to_xy_yaw").as_bool();
+  } else {
+    optimizer_params.restrict_map_odom_correction_to_xy_yaw = true;
+  }
+  restrict_map_odom_correction_to_xy_yaw_ = optimizer_params.restrict_map_odom_correction_to_xy_yaw;
   if (this->has_parameter("throttle_detections")) {
     optimizer_params.throttle_detections = this->get_parameter(
       "throttle_detections").as_bool();

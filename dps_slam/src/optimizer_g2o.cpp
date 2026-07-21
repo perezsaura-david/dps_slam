@@ -302,6 +302,7 @@ bool OptimizerG2O::handleNewOdom(
     temp_graph.reset();
     temp_graph = std::make_shared<GraphG2O>("Temp Graph");
     temp_graph->setRobustKernelDelta(robust_kernel_delta_);
+    temp_graph->setRestrictKeyframeHeightToOdometry(restrict_map_odom_correction_to_xy_yaw_);
     temp_graph_generated_ = false;
   }
   graph_mutex_.unlock();
@@ -440,12 +441,15 @@ void OptimizerG2O::setParameters(const OptimizerG2OParameters & _params)
   map_odom_transform_alpha_ = _params.map_odom_transform_alpha;
   earth_map_transform_ = initial_earth_to_map_transform_;
   calculate_odom_covariance_ = _params.calculate_odom_covariance_;
+  restrict_map_odom_correction_to_xy_yaw_ = _params.restrict_map_odom_correction_to_xy_yaw;
   throttle_detections_ = _params.throttle_detections;
   use_dual_graph_ = _params.use_dual_graph;
   robust_kernel_delta_ = _params.robust_kernel_delta;
   main_graph->setRobustKernelDelta(robust_kernel_delta_);
+  main_graph->setRestrictKeyframeHeightToOdometry(restrict_map_odom_correction_to_xy_yaw_);
   if (temp_graph) {
     temp_graph->setRobustKernelDelta(robust_kernel_delta_);
+    temp_graph->setRestrictKeyframeHeightToOdometry(restrict_map_odom_correction_to_xy_yaw_);
   }
 
   PARAM(PRINT_VAR(main_graph_odometry_distance_threshold_));
@@ -453,6 +457,7 @@ void OptimizerG2O::setParameters(const OptimizerG2OParameters & _params)
   PARAM(PRINT_VAR(main_graph_odometry_distance_threshold_if_detections_));
   PARAM(PRINT_VAR(map_odom_transform_alpha_));
   PARAM(PRINT_VAR(calculate_odom_covariance_));
+  PARAM(PRINT_VAR(restrict_map_odom_correction_to_xy_yaw_));
   PARAM(PRINT_VAR(use_dual_graph_));
   PARAM(PRINT_VAR(robust_kernel_delta_));
 
@@ -483,7 +488,23 @@ void OptimizerG2O::updateOdomMapTransformLocked()
 {
   earth_map_transform_ = getOptimizedMapPose();
 
+  // map_node_ is a real, non-fixed vertex chained to every keyframe, so it can also
+  // drift in z/roll/pitch. Same restriction as new_map_odom_tranform below.
+  if (restrict_map_odom_correction_to_xy_yaw_) {
+    double map_yaw = std::atan2(earth_map_transform_.rotation()(1, 0), earth_map_transform_.rotation()(0, 0));
+    earth_map_transform_.linear() = Eigen::AngleAxisd(map_yaw, Eigen::Vector3d::UnitZ()).toRotationMatrix();
+    earth_map_transform_.translation().z() = 0.0;
+  }
+
   Eigen::Isometry3d new_map_odom_tranform = earth_map_transform_.inverse() * getOptimizedPose() * last_odometry_added_.odometry.inverse();
+
+  // Walls carry no height/roll/pitch information, so keep only x, y, yaw here --
+  // height always comes straight from odometry, never the wall-informed graph.
+  if (restrict_map_odom_correction_to_xy_yaw_) {
+    double yaw = std::atan2(new_map_odom_tranform.rotation()(1, 0), new_map_odom_tranform.rotation()(0, 0));
+    new_map_odom_tranform.linear() = Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()).toRotationMatrix();
+    new_map_odom_tranform.translation().z() = 0.0;
+  }
   // Eigen::Isometry3d map_odom_diff = new_map_odom_tranform.inverse() * map_odom_tranform_;
   // if (map_odom_diff.translation().norm() > map_odom_security_threshold_) {
   //   WARN("Big Map-Odom transform difference: " << map_odom_diff.translation().norm());
@@ -534,6 +555,18 @@ Eigen::Isometry3d OptimizerG2O::getMapTransform()
 {
   std::lock_guard<std::mutex> lock(graph_mutex_);
   return earth_map_transform_;
+}
+
+std::vector<Eigen::Isometry3d> OptimizerG2O::getMainGraphKeyframePoses()
+{
+  std::lock_guard<std::mutex> lock(graph_mutex_);
+  return main_graph->getOdomKeyframePoses();
+}
+
+std::vector<Eigen::Isometry3d> OptimizerG2O::getMainGraphKeyframeRawPoses()
+{
+  std::lock_guard<std::mutex> lock(graph_mutex_);
+  return main_graph->getOdomKeyframeRawPoses();
 }
 
 bool OptimizerG2O::generateDetectionOdometryInfo(

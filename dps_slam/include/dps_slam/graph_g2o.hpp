@@ -77,6 +77,12 @@ public:
   std::vector<GraphNode *> getNodes();
   std::vector<GraphEdge *> getEdges();
   std::unordered_map<std::string, GraphNode *> getObjectNodes();
+  // Current optimized pose of every odometry keyframe, in insertion order -- the
+  // full corrected trajectory, unlike getLastOdomNode() (most recent only).
+  std::vector<Eigen::Isometry3d> getOdomKeyframePoses();
+  // Raw odometry pose each keyframe was created with, before optimization, same
+  // order as getOdomKeyframePoses().
+  std::vector<Eigen::Isometry3d> getOdomKeyframeRawPoses();
   OdomNode * getLastOdomNode();
   OdomNode * getMapNode();
   void setMapNode(OdomNode * _map_node);
@@ -98,6 +104,9 @@ public:
   // optimized trajectory under plain least-squares. Needs empirical tuning against
   // real data; roughly, smaller = rejects outliers more aggressively.
   void setRobustKernelDelta(double _delta);
+  // When true (default), every keyframe added from now on gets a HeightPriorEdge
+  // pinning its z to raw odometry. See graph_edge_types.hpp.
+  void setRestrictKeyframeHeightToOdometry(bool _restrict);
   std::shared_ptr<g2o::SparseOptimizer> graph_;  // g2o graph
 
   std::unordered_map<std::string, GraphNode *> obj_id2node_;
@@ -109,9 +118,12 @@ private:
   std::string name_;
   OdomNode * last_odom_node_;
   OdomNode * map_node_;
+  std::vector<OdomNode *> odom_keyframes_;
+  std::vector<Eigen::Isometry3d> odom_keyframe_raw_poses_;
   std::vector<GraphNode *> graph_nodes_;
   std::vector<GraphEdge *> graph_edges_;
   double robust_kernel_delta_ = 3.0;
+  bool restrict_keyframe_height_to_odometry_ = true;
 };
 
 #endif  // AS2_SLAM__GRAPH_G2O_HPP_

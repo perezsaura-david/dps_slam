@@ -67,6 +67,7 @@ struct OptimizerG2OParameters
   bool odometry_is_relative;
   bool generate_odom_map_transform;
   bool calculate_odom_covariance_;
+  bool restrict_map_odom_correction_to_xy_yaw;
   bool throttle_detections;
   bool use_dual_graph;
   double robust_kernel_delta;  // Huber delta applied to every graph edge
@@ -92,6 +93,11 @@ public:
   // groups under the MultiThreadedExecutor), so these must not be read unlocked.
   Eigen::Isometry3d getMapOdomTransform();
   Eigen::Isometry3d getMapTransform();
+  // Per-keyframe optimized trajectory, in main_graph's internal (map-anchored)
+  // frame -- compose with getMapTransform() to express in earth frame.
+  std::vector<Eigen::Isometry3d> getMainGraphKeyframePoses();
+  // Raw odometry pose each keyframe was created with, same order as above.
+  std::vector<Eigen::Isometry3d> getMainGraphKeyframeRawPoses();
   Eigen::Isometry3d filterTransform(Eigen::Isometry3d _last_transform, Eigen::Isometry3d _new_transform);
 
   bool handleNewOdom(
@@ -144,6 +150,7 @@ private:
   bool odometry_is_relative_ = false;
   bool generate_odom_map_transform_ = false;
   bool calculate_odom_covariance_ = false;
+  bool restrict_map_odom_correction_to_xy_yaw_ = true;
   bool throttle_detections_ = true;
   bool use_dual_graph_ = true;
   double robust_kernel_delta_ = 3.0;
