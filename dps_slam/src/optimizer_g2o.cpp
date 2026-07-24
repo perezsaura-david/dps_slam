@@ -260,6 +260,31 @@ bool OptimizerG2O::handleNewOdom(
               object.first, gate_node->getPosition(), cov_matrix, true);
           }
 
+          GraphNodeCylinder * cylinder_node = dynamic_cast<GraphNodeCylinder *>(object.second);
+          if (cylinder_node) {
+            Eigen::MatrixXd cov_matrix = temp_graph->computeNodeCovariance(cylinder_node);
+            merge_log << temp_nodes << "," << temp_edges << "," << temp_objects << ",1,"
+                      << object.first << ","
+                      << cylinder_node->getAnchor().x() << ","
+                      << cylinder_node->getAnchor().y() << ","
+                      << cylinder_node->getAnchor().z() << ","
+                      << cov_matrix.size() << ",";
+            if (cov_matrix.size() > 0) {
+              merge_log << cov_matrix.diagonal().transpose();
+            } else {
+              merge_log << "empty";
+            }
+            merge_log << "," << new_odometry_info.map_ref.translation().x()
+                      << "," << new_odometry_info.map_ref.translation().y()
+                      << "," << new_odometry_info.map_ref.translation().z()
+                      << "," << main_graph->graph_->vertices().size()
+                      << "," << main_graph->graph_->edges().size() << std::endl;
+            if (cov_matrix.size() == 0) { continue; }
+            object_detection = new CylinderDetection(
+              object.first, cylinder_node->getAnchor(), cylinder_node->getDirection(),
+              cov_matrix, cylinder_node->getRadius(), cylinder_node->getHeight(), true);
+          }
+
           GraphNodePlane * plane_node = dynamic_cast<GraphNodePlane *>(object.second);
           if (plane_node) {
             Eigen::MatrixXd cov_matrix = temp_graph->computeNodeCovariance(plane_node);

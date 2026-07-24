@@ -386,8 +386,10 @@ void SemanticSlam::detectionsCallback(
       case dps_slam_msgs::msg::Geometry::LINE:
         processLineDetection(detection, msg->header, detection_odometry_info);
         break;
-      case dps_slam_msgs::msg::Geometry::VECTOR:
       case dps_slam_msgs::msg::Geometry::CYLINDER:
+        processCylinderDetection(detection, msg->header, detection_odometry_info);
+        break;
+      case dps_slam_msgs::msg::Geometry::VECTOR:
         WARN("Detection geometry not yet supported by the backend: "
           << static_cast<int>(detection.geometry.type));
         break;
@@ -452,6 +454,67 @@ void SemanticSlam::processPointDetection(
   }
 
   optimizer_ptr_->handleNewObjectDetection(point_object, _detection_odometry_info);
+}
+
+void SemanticSlam::processCylinderDetection(
+  const dps_slam_msgs::msg::DetectionWithID _msg,
+  const std_msgs::msg::Header _header,
+  const OdometryInfo _detection_odometry_info)
+{
+  std::string cylinder_id = _msg.id;
+  std::string object_type = _msg.label.empty() ? force_object_type_ : _msg.label;
+  if (object_type != "cylinder") {
+    ERROR("Unknown cylinder object type: " << object_type);
+    return;
+  }
+
+  // Center pose (+Z = axis) transformed into the robot frame.
+  Eigen::Isometry3d center_pose =
+    generatePoseFromMsg(_msg.geometry.cylinder.pose.pose, _header);
+  const double radius = _msg.geometry.cylinder.radius;
+  const double height = _msg.geometry.cylinder.height;
+
+  Eigen::Vector3d axis = center_pose.rotation() * Eigen::Vector3d::UnitZ();
+  // Canonicalize the axis sign (an axis is a line, not a ray): make it point
+  // "up" in the robot frame so anchor = TOP is well defined. Valid while the
+  // robot flies roughly level (as here); revisit for aggressive attitudes.
+  if (axis.z() < 0.0) {axis = -axis;}
+  // Anchor the landmark at the cylinder TOP: the along-axis position is
+  // observable for a finite cylinder, and the top is the occlusion-robust
+  // feature this pipeline maps (see cylinder_to_slam).
+  const Eigen::Vector3d top = center_pose.translation() + 0.5 * height * axis;
+
+  // 5x5 covariance over [anchor(3); direction tangent(2)]: position block from
+  // the message pose covariance, direction tangent from its roll/pitch block.
+  Eigen::Map<const Eigen::Matrix<double, 6, 6, Eigen::RowMajor>> msg_covariance(
+    _msg.geometry.cylinder.pose.covariance.data());
+  Eigen::Matrix<double, 5, 5> cylinder_covariance = Eigen::Matrix<double, 5, 5>::Zero();
+  if (!msg_covariance.isZero()) {
+    cylinder_covariance.block<3, 3>(0, 0) = msg_covariance.topLeftCorner<3, 3>();
+    cylinder_covariance(3, 3) = msg_covariance(3, 3);
+    cylinder_covariance(4, 4) = msg_covariance(4, 4);
+  } else {
+    cylinder_covariance.block<3, 3>(0, 0) =
+      Eigen::Matrix3d::Identity() * detection_covariance_factor_;
+    cylinder_covariance(3, 3) =
+      detection_covariance_factor_ * detection_orientation_covariance_factor_;
+    cylinder_covariance(4, 4) =
+      detection_covariance_factor_ * detection_orientation_covariance_factor_;
+  }
+
+  bool detections_are_absolute = false;
+
+  if (csv_logger_) {
+    csv_logger_->logDetection(
+      _header.stamp.sec, _header.stamp.nanosec,
+      cylinder_id, object_type, top,
+      _detection_odometry_info.odom_ref.translation(), detections_are_absolute);
+  }
+
+  ObjectDetection * cylinder_object = new CylinderDetection(
+    cylinder_id, top, axis, cylinder_covariance, radius, height, detections_are_absolute);
+
+  optimizer_ptr_->handleNewObjectDetection(cylinder_object, _detection_odometry_info);
 }
 
 void SemanticSlam::processPoseDetection(
@@ -781,6 +844,21 @@ void SemanticSlam::publishOptimizedDetections(const std_msgs::msg::Header & _hea
       detection.label = "gate";
       detection.geometry.type = dps_slam_msgs::msg::Geometry::POINT;
       detection.geometry.point.point = convertToGeometryMsgPoint(gate_node->getPosition());
+    } else if (auto * cylinder_node = dynamic_cast<GraphNodeCylinder *>(node)) {
+      detection.label = "cylinder";
+      detection.geometry.type = dps_slam_msgs::msg::Geometry::CYLINDER;
+      const Eigen::Vector3d dir = cylinder_node->getDirection();
+      const Eigen::Vector3d center =
+        cylinder_node->getAnchor() - dir * (cylinder_node->getHeight() / 2.0);
+      const Eigen::Quaterniond q =
+        Eigen::Quaterniond::FromTwoVectors(Eigen::Vector3d::UnitZ(), dir);
+      detection.geometry.cylinder.pose.pose.position = convertToGeometryMsgPoint(center);
+      detection.geometry.cylinder.pose.pose.orientation.x = q.x();
+      detection.geometry.cylinder.pose.pose.orientation.y = q.y();
+      detection.geometry.cylinder.pose.pose.orientation.z = q.z();
+      detection.geometry.cylinder.pose.pose.orientation.w = q.w();
+      detection.geometry.cylinder.radius = cylinder_node->getRadius();
+      detection.geometry.cylinder.height = cylinder_node->getHeight();
     } else if (auto * plane_node = dynamic_cast<GraphNodePlane *>(node)) {
       detection.label = "wall";
       detection.geometry.type = dps_slam_msgs::msg::Geometry::LINE;

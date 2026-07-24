@@ -206,6 +206,81 @@ public:
   }
 };
 
+// Cylinder-axis detection: anchor point (cylinder TOP, on the axis) + axis
+// unit direction, plus the measured radius/height (NOT optimized -- carried to
+// the node as running-averaged metadata). Covariance is 5x5 over
+// [anchor(3); direction tangent(2)].
+class CylinderDetection : public ObjectDetectionBase
+{
+public:
+  CylinderDetection(
+    const std::string & _id, const Eigen::Vector3d & _anchor, const Eigen::Vector3d & _direction,
+    const Eigen::MatrixXd & _covariance, const double _radius, const double _height,
+    const bool _detections_are_absolute)
+  : ObjectDetectionBase(_id, _covariance, _detections_are_absolute),
+    radius_(_radius), height_(_height)
+  {
+    measured_state_.head<3>() = _anchor;
+    measured_state_.tail<3>() = _direction.normalized();
+  }
+
+  bool prepareMeasurements(const OdometryInfo & _detection_odometry) override
+  {
+    if (detections_are_absolute_) {
+      // Measured state already in the world/map frame; express the edge
+      // measurement in the reference keyframe's frame.
+      const Eigen::Isometry3d odom_inv = _detection_odometry.odom_ref.inverse();
+      edge_measurement_.head<3>() = odom_inv * measured_state_.head<3>();
+      edge_measurement_.tail<3>() =
+        (odom_inv.rotation() * measured_state_.tail<3>()).normalized();
+      node_estimation_ = measured_state_;
+    } else {
+      // Measured state in the robot frame at detection time; the initial node
+      // estimate lifts it into the map frame with the detection-time odometry.
+      edge_measurement_ = measured_state_;
+      node_estimation_.head<3>() = _detection_odometry.map_ref * measured_state_.head<3>();
+      node_estimation_.tail<3>() =
+        (_detection_odometry.map_ref.rotation() * measured_state_.tail<3>()).normalized();
+    }
+    return true;
+  }
+
+  GraphNode * createNode() override
+  {
+    GraphNodeCylinder * node = new GraphNodeCylinder(node_estimation_, radius_, height_);
+    node->setCovariance(covariance_matrix_);
+    return node;
+  }
+
+  GraphEdge * createEdge(GraphNode * _node, GraphNode * _detection_node) override
+  {
+    GraphNodeSE3 * node_se3 = dynamic_cast<GraphNodeSE3 *>(_node);
+    GraphNodeCylinder * detection_node_cylinder =
+      dynamic_cast<GraphNodeCylinder *>(_detection_node);
+    // A mismatched node type (e.g. this id already exists as a gate/aruco
+    // fixed object) must not produce an edge with a null vertex.
+    if (!node_se3 || !detection_node_cylinder) {
+      ERROR("Cylinder edge: reference or detection node has wrong type");
+      return nullptr;
+    }
+    // Fold this sighting's measured dimensions into the node's running average
+    // (dimensions are metadata, not part of the optimized state).
+    if (detection_node_cylinder) {
+      detection_node_cylinder->updateDimensions(radius_, height_);
+    }
+    return new CylinderEdge(
+      node_se3, detection_node_cylinder, edge_measurement_,
+      information_matrix_);
+  }
+
+protected:
+  Eigen::Matrix<double, 6, 1> measured_state_;
+  Eigen::Matrix<double, 6, 1> node_estimation_;
+  Eigen::Matrix<double, 6, 1> edge_measurement_;
+  double radius_;
+  double height_;
+};
+
 class ObjectDetectionPlane : public ObjectDetectionBase
 {
 public:
