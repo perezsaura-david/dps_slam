@@ -71,6 +71,9 @@ struct OptimizerG2OParameters
   bool throttle_detections;
   bool use_dual_graph;
   double robust_kernel_delta;  // Huber delta applied to every graph edge
+  // Minimum variance of each odometry edge DOF (m^2 for x/y/z, rad^2 for roll/pitch/yaw).
+  double odom_covariance_floor_translation = 1e-4;
+  double odom_covariance_floor_rotation = 1e-4;
   Eigen::Isometry3d earth_to_map_transform;
   std::vector<FixedObject> fixed_objects;
 };
@@ -154,6 +157,8 @@ private:
   bool throttle_detections_ = true;
   bool use_dual_graph_ = true;
   double robust_kernel_delta_ = 3.0;
+  double odom_covariance_floor_translation_ = 1e-4;
+  double odom_covariance_floor_rotation_ = 1e-4;
   std::vector<FixedObject> fixed_objects_;
   std::unordered_set<std::string> detections_since_last_keyframe_;
   CsvLogger * csv_logger_ = nullptr;

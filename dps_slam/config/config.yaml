@@ -27,6 +27,12 @@
     visualize_graphs: true
     map_odom_security_threshold: 5.0
     calculate_odom_covariance: true
+    # Minimum variance per odometry-edge DOF (m^2 / rad^2). The rotation floor bounds how far
+    # the graph may bend the odometry heading per keyframe: 0.0001 (0.57 deg) suits a drifting
+    # odometry, a good LIO wants ~0.000001 (0.06 deg). Write decimals, not 1e-6: launch
+    # arguments without a '.' are not parsed as doubles.
+    odom_covariance_floor_translation: 0.0001
+    odom_covariance_floor_rotation: 0.0001
     map_odom_transform_alpha: 1.0
     # DETECTIONS
     generate_orientation_cov_by_distance: false

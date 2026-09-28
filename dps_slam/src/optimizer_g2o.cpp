@@ -120,11 +120,16 @@ bool OptimizerG2O::generateOdometryInfo(
     // near-zero for a DOF that hasn't grown much since the last keyframe. That DOF's
     // information (this matrix's inverse, taken with no clamping in addNewKeyframe)
     // then blows up, making the odometry edge near-rigid on that axis and fighting
-    // any wall-driven correction hard enough to destabilize the optimizer. Floor it
-    // to the same covariance floor walls use, so no single edge can claim more
-    // confidence than the wall observations meant to correct it.
-    _odometry_info.covariance_matrix.diagonal() =
-      _odometry_info.covariance_matrix.diagonal().cwiseMax(1e-4);
+    // any wall-driven correction hard enough to destabilize the optimizer. Floor it,
+    // separately for translation and rotation: the rotation floor sets how far the
+    // graph may bend the odometry heading per keyframe (1e-4 rad^2 = 0.57 deg, fine for
+    // a drifting odometry; a good LIO is ~0.06 deg, i.e. 1e-6).
+    _odometry_info.covariance_matrix.diagonal().head<3>() =
+      _odometry_info.covariance_matrix.diagonal().head<3>().cwiseMax(
+      odom_covariance_floor_translation_);
+    _odometry_info.covariance_matrix.diagonal().tail<3>() =
+      _odometry_info.covariance_matrix.diagonal().tail<3>().cwiseMax(
+      odom_covariance_floor_rotation_);
   }
   _odometry_info.map_ref = initial_earth_to_map_transform_.inverse() * _odometry_info.odom_ref;
   // _odometry_info.map_ref = earth_map_transform_ * _odometry_info.odom_ref;
@@ -458,6 +463,8 @@ void OptimizerG2O::setParameters(const OptimizerG2OParameters & _params)
   throttle_detections_ = _params.throttle_detections;
   use_dual_graph_ = _params.use_dual_graph;
   robust_kernel_delta_ = _params.robust_kernel_delta;
+  odom_covariance_floor_translation_ = _params.odom_covariance_floor_translation;
+  odom_covariance_floor_rotation_ = _params.odom_covariance_floor_rotation;
   main_graph->setRobustKernelDelta(robust_kernel_delta_);
   main_graph->setRestrictKeyframeHeightToOdometry(restrict_map_odom_correction_to_xy_yaw_);
   if (temp_graph) {
@@ -473,6 +480,8 @@ void OptimizerG2O::setParameters(const OptimizerG2OParameters & _params)
   PARAM(PRINT_VAR(restrict_map_odom_correction_to_xy_yaw_));
   PARAM(PRINT_VAR(use_dual_graph_));
   PARAM(PRINT_VAR(robust_kernel_delta_));
+  PARAM(PRINT_VAR(odom_covariance_floor_translation_));
+  PARAM(PRINT_VAR(odom_covariance_floor_rotation_));
 
   // Anchor edge for absolute orientation; keep yaw as tight as the other axes so the
   // whole graph can't rotate freely with accumulating odometry drift.

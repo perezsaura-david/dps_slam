@@ -921,6 +921,14 @@ OptimizerG2OParameters SemanticSlam::getOptimizerParameters() {
   } else {
     optimizer_params.robust_kernel_delta = 3.0;
   }
+  if (this->has_parameter("odom_covariance_floor_translation")) {
+    optimizer_params.odom_covariance_floor_translation =
+      this->get_parameter("odom_covariance_floor_translation").as_double();
+  }
+  if (this->has_parameter("odom_covariance_floor_rotation")) {
+    optimizer_params.odom_covariance_floor_rotation =
+      this->get_parameter("odom_covariance_floor_rotation").as_double();
+  }
 
   double earth_to_map_x = 0.0;
   double earth_to_map_y = 0.0;
