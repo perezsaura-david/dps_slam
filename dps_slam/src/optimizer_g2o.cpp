@@ -104,14 +104,27 @@ bool OptimizerG2O::generateOdometryInfo(
         _last_odometry_added.covariance(1, 1));
       _odometry_info.covariance_matrix(2, 2) = fabs(_new_odometry.covariance(2, 2) -
         _last_odometry_added.covariance(2, 2));
-      _odometry_info.covariance_matrix(3, 3) = _new_odometry.covariance(3, 3);
-      _odometry_info.covariance_matrix(4, 4) = _new_odometry.covariance(4, 4);
-      _odometry_info.covariance_matrix(5, 5) = _new_odometry.covariance(5, 5);
+      _odometry_info.covariance_matrix(3, 3) = fabs(_new_odometry.covariance(3, 3) -
+        _last_odometry_added.covariance(3, 3));
+      _odometry_info.covariance_matrix(4, 4) = fabs(_new_odometry.covariance(4, 4) -
+        _last_odometry_added.covariance(4, 4));
+      _odometry_info.covariance_matrix(5, 5) = fabs(_new_odometry.covariance(5, 5) -
+        _last_odometry_added.covariance(5, 5));
     } else {
       // WARN("Using odometry covariance");
       _odometry_info.covariance_matrix = _new_odometry.covariance;
     }
     // _odometry_info.covariance_matrix = _new_odometry.covariance - _last_odometry_added.covariance;
+
+    // Differenced (or raw, if calculate_odom_covariance_ is off) covariance can be
+    // near-zero for a DOF that hasn't grown much since the last keyframe. That DOF's
+    // information (this matrix's inverse, taken with no clamping in addNewKeyframe)
+    // then blows up, making the odometry edge near-rigid on that axis and fighting
+    // any wall-driven correction hard enough to destabilize the optimizer. Floor it
+    // to the same covariance floor walls use, so no single edge can claim more
+    // confidence than the wall observations meant to correct it.
+    _odometry_info.covariance_matrix.diagonal() =
+      _odometry_info.covariance_matrix.diagonal().cwiseMax(1e-4);
   }
   _odometry_info.map_ref = initial_earth_to_map_transform_.inverse() * _odometry_info.odom_ref;
   // _odometry_info.map_ref = earth_map_transform_ * _odometry_info.odom_ref;
@@ -461,8 +474,9 @@ void OptimizerG2O::setParameters(const OptimizerG2OParameters & _params)
   PARAM(PRINT_VAR(use_dual_graph_));
   PARAM(PRINT_VAR(robust_kernel_delta_));
 
+  // Anchor edge for absolute orientation; keep yaw as tight as the other axes so the
+  // whole graph can't rotate freely with accumulating odometry drift.
   Eigen::MatrixXd earth_to_map_covariance_ = Eigen::MatrixXd::Identity(6, 6) * 0.0001;
-  earth_to_map_covariance_(5, 5) = 0.1;
   // odometry_received_.covariance(4, 4) *= 10e4;
   // odometry_received_.covariance(3, 3) *= 10e4;
 

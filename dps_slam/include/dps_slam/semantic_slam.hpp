@@ -161,6 +161,9 @@ private:
   std::string odom_frame_;
   std::string robot_frame_;
   std::string force_object_type_;
+  // Treat Line2D detections as vertical planes of a gravity-aligned (yaw-only) frame and
+  // tilt them by the sensor's roll/pitch, instead of as planes vertical in the sensor frame.
+  bool line_detections_gravity_aligned_ = true;
   double detection_covariance_factor_ = 0.01;
   double detection_orientation_covariance_factor_ = 10;
   double distance_for_orientation_covariance_increment_ = 10;

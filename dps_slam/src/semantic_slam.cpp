@@ -92,6 +92,12 @@ SemanticSlam::SemanticSlam(rclcpp::NodeOptions & options)
     PARAM("Forcing object type to: " + force_object_type_);
   }
 
+  if (this->has_parameter("line_detections_gravity_aligned")) {
+    line_detections_gravity_aligned_ =
+      this->get_parameter("line_detections_gravity_aligned").as_bool();
+  }
+  PARAM(PRINT_VAR(line_detections_gravity_aligned_));
+
   detection_covariance_by_distance_ = this->get_parameter("detection_covariance_by_distance").as_bool();
   detection_covariance_by_distance2_ = this->get_parameter("detection_covariance_by_distance2").as_bool();
   detection_covariance_factor_ = this->get_parameter("detection_covariance_factor").as_double();
@@ -593,6 +599,34 @@ void SemanticSlam::processLineDetection(
     boundary.emplace_back(p.x, p.y, p.z);
   }
 
+  // A 2D line comes from a top-down projection, so the wall it describes is vertical in the
+  // world, not in the (tilted) sensor frame. Read it in the gravity-aligned frame that shares
+  // the sensor's origin and yaw, and rotate it into the sensor frame by the sensor's roll and
+  // pitch: n_sensor = R_rp^T * n_level. Without this a drone cruising at a few degrees of
+  // pitch reports every wall that far from vertical, against a 1e-3 elevation covariance,
+  // and the optimizer resolves the conflict by twisting keyframe attitude and yaw.
+  // Lines already carrying a z component are assumed to be 3D-correct and left as is.
+  if (line_detections_gravity_aligned_ && std::abs(n.z) < 1e-6) {
+    std::string sensor_frame = _header.frame_id.empty() ? robot_frame_ : _header.frame_id;
+    try {
+      auto sensor_in_odom = tf_buffer_->lookupTransform(
+        odom_frame_, sensor_frame, _header.stamp,
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(1.0)));
+      Eigen::Matrix3d rotation = convertToIsometry3d(sensor_in_odom.transform).rotation();
+      double yaw = std::atan2(rotation(1, 0), rotation(0, 0));
+      Eigen::Matrix3d roll_pitch = Eigen::AngleAxisd(-yaw, Eigen::Vector3d::UnitZ()) * rotation;
+      Eigen::Isometry3d level_to_sensor = Eigen::Isometry3d::Identity();
+      level_to_sensor.linear() = roll_pitch.transpose();
+      plane = level_to_sensor * plane;
+      for (auto & p : boundary) {p = level_to_sensor * p;}
+    } catch (const tf2::TransformException & ex) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "Line detection left unleveled: lookup %s <- %s failed: %s", odom_frame_.c_str(),
+        sensor_frame.c_str(), ex.what());
+    }
+  }
+
   DEBUG(
     "Wall '" << line_id << "' BEFORE transform [" << _header.frame_id << "]: normal=("
       << plane.normal().x() << ", " << plane.normal().y() << ", " << plane.normal().z()
@@ -730,7 +764,7 @@ void SemanticSlam::publishOptimizedDetections(const std_msgs::msg::Header & _hea
 
   dps_slam_msgs::msg::DetectionWithIDArray detections_msg;
   detections_msg.header.stamp = _header.stamp;
-  detections_msg.header.frame_id = earth_frame_;  // main-graph estimates live in the earth/map frame
+  detections_msg.header.frame_id = estimated_map_frame_;
 
   for (auto & id_node : optimizer_ptr_->main_graph->getObjectNodes()) {
     GraphNode * node = id_node.second;
@@ -791,11 +825,11 @@ void SemanticSlam::visualizeCleanTempGraph()
 visualization_msgs::msg::MarkerArray SemanticSlam::generateVizNodesMsg(
   std::shared_ptr<GraphG2O> & _graph)
 {
+  // Vertex estimates are in map frame, not earth frame.
   bool main = false;
-  std::string viz_frame = earth_frame_;
+  std::string viz_frame = estimated_map_frame_;
   if (_graph->getName() == "Main Graph") {
     main = true;
-    viz_frame = earth_frame_;
   }
   visualization_msgs::msg::MarkerArray viz_markers_msg;
   std::vector<GraphNode *> graph_nodes = _graph->getNodes();
@@ -813,10 +847,9 @@ visualization_msgs::msg::MarkerArray SemanticSlam::generateVizEdgesMsg(
   std::shared_ptr<GraphG2O> & _graph)
 {
   bool main = false;
-  std::string viz_frame = earth_frame_;
+  std::string viz_frame = estimated_map_frame_;
   if (_graph->getName() == "Main Graph") {
     main = true;
-    viz_frame = earth_frame_;
   }
   visualization_msgs::msg::MarkerArray viz_markers_msg;
   std::vector<GraphEdge *> graph_edges = _graph->getEdges();
