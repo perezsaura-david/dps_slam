@@ -161,9 +161,6 @@ bool OptimizerG2O::handleNewOdom(
   // if (!checkAddingConditions(new_odometry_info, main_graph_odometry_distance_threshold_)) {
   //   return false;
   // }
-  last_odometry_added_.odometry = new_odometry_info.odom_ref;
-  last_odometry_added_.covariance = _new_odometry.covariance;
-
   // DEBUG(new_odometry_info.covariance_matrix);
 
   // FLAG("ADDING NEW ODOMETRY TO MAIN GRAPH");
@@ -172,9 +169,18 @@ bool OptimizerG2O::handleNewOdom(
     return false;
   }
 
-  main_graph->addNewKeyframe(
-    new_odometry_info.map_ref, new_odometry_info.increment,
-    new_odometry_info.covariance_matrix);
+  {
+    // The odometry reference and the keyframe it anchors are one state:
+    // updateOdomMapTransform() pairs them to build map->odom. Publishing the
+    // reference before its keyframe exists lets that pairing straddle the two,
+    // and the transform then carries the distance flown in between.
+    std::lock_guard<std::mutex> lock(graph_mutex_);
+    last_odometry_added_.odometry = new_odometry_info.odom_ref;
+    last_odometry_added_.covariance = _new_odometry.covariance;
+    main_graph->addNewKeyframe(
+      new_odometry_info.map_ref, new_odometry_info.increment,
+      new_odometry_info.covariance_matrix);
+  }
 
   if (!use_dual_graph_) {
     std::lock_guard<std::mutex> lock(graph_mutex_);
@@ -358,6 +364,10 @@ bool OptimizerG2O::handleNewOdom(
   {
     std::lock_guard<std::mutex> lock(graph_mutex_);
 
+    // chi2() sums the error vectors the edges currently hold; edges added since
+    // the last optimization hold uninitialized ones, so the errors must be
+    // computed before the value is read or the log records garbage.
+    main_graph->graph_->computeActiveErrors();
     double chi2_before = main_graph->graph_->chi2();
     auto opt_start = std::chrono::steady_clock::now();
     main_graph->optimizeGraph();
@@ -532,10 +542,11 @@ void OptimizerG2O::updateOdomMapTransform()
 {
   // Called by the TF timer. Every optimization already recomputes the transforms (under the
   // lock, from the optimized graph). Recomputing here too is only needed to step the alpha
-  // filter, and is unsafe: handleNewOdom updates last_odometry_added_ and adds the new,
-  // not yet optimized keyframe outside the lock, so a tick in between pairs the old node
-  // with the new odometry and publishes a map->odom off by the whole rotation since the
-  // last keyframe (seen: -88 deg for ~130 ms after a 90 deg turn).
+  // filter, and was unsafe: handleNewOdom updated last_odometry_added_ and added the new,
+  // not yet optimized keyframe outside the lock, so a tick in between paired the old node
+  // with the new odometry and published a map->odom off by the whole rotation since the
+  // last keyframe (seen: -88 deg for ~130 ms after a 90 deg turn). handleNewOdom now does
+  // both under graph_mutex_.
   if (map_odom_transform_alpha_ >= 1.0) {return;}
   // If an optimization holds the graph, skip: the cached transforms stay valid until it
   // finishes (and it refreshes them itself).
