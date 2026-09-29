@@ -21,3 +21,7 @@ log/
 # Python
 __pycache__/
 *.pyc
+
+# Runtime dumps (CsvLogger / g2o solver write to cwd)
+slam_*.csv
+debug.txt
