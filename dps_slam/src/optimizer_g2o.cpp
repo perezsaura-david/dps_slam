@@ -190,11 +190,13 @@ bool OptimizerG2O::handleNewOdom(
   if (use_dual_graph_) {
   graph_mutex_.lock();
   if (temp_graph == nullptr) {
+    graph_mutex_.unlock();
     ERROR("Temp graph is null");
     return false;
   }
   if (temp_graph_generated_ && temp_graph) {
-    static std::ofstream merge_log("slam_merge_debug.csv");
+    static std::ofstream merge_log(
+      (csv_logger_ ? csv_logger_->outputDir() : std::string(".")) + "/slam_merge_debug.csv");
     static bool merge_log_header = false;
     if (!merge_log_header) {
       merge_log << "temp_nodes,temp_edges,temp_objects,opt_success,"

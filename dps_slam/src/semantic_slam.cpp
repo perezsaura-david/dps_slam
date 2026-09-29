@@ -176,7 +176,12 @@ SemanticSlam::SemanticSlam(rclcpp::NodeOptions & options)
   tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(*this);
 
 
-  csv_logger_ = std::make_unique<CsvLogger>(".");
+  // Where the CSV diagnostics (slam_odom.csv, slam_keyframes.csv, ...) go.
+  // Defaults to the working directory, as before.
+  std::string csv_output_dir;
+  this->get_parameter_or("csv_output_dir", csv_output_dir, std::string("."));
+  rcpputils::fs::create_directories(rcpputils::fs::path(csv_output_dir));
+  csv_logger_ = std::make_unique<CsvLogger>(csv_output_dir);
 
   optimizer_ptr_ = std::make_unique<OptimizerG2O>();
   optimizer_ptr_->setParameters(getOptimizerParameters());
