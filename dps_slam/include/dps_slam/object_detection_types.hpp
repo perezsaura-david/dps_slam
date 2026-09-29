@@ -245,6 +245,9 @@ public:
     return node;
   }
 
+  // Extent of this observation in the node (map) frame, set by prepareMeasurements().
+  const std::vector<Eigen::Vector3d> & getNodeBoundary() const {return node_boundary_;}
+
   GraphEdge * createEdge(GraphNode * _node, GraphNode * _detection_node) override
   {
     GraphNodeSE3 * node_se3 = dynamic_cast<GraphNodeSE3 *>(_node);

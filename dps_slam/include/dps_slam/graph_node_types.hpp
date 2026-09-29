@@ -48,11 +48,17 @@
 #include <g2o/types/slam3d/vertex_pointxyz.h>
 #include <g2o/types/slam3d_addons/vertex_plane.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
 #include <visualization_msgs/msg/marker.hpp>
 #include "utils/conversions.hpp"
+
+// Every temp-graph element is drawn in this one translucent cyan, so the short-lived temp graph
+// stands apart from the main graph, whose elements keep their per-type colors. (Dimming the
+// main color, as before, left temp walls a dark orange hard to tell from main ones.)
+inline Eigen::Vector4d tempGraphVizColor() {return {0.0, 0.8, 1.0, 0.5};}
 
 class GraphNode
 {
@@ -175,7 +181,7 @@ protected:
     if (_main) {
       return getVizColor();
     } else {
-      return getVizColor() * 0.5;
+      return tempGraphVizColor();
     }
   }
 
@@ -285,6 +291,29 @@ public:
   Eigen::MatrixXd getCovariance() {return cov_matrix_;}
   // Observed extent of the plane patch (corner points, in the node/map frame).
   void setBoundary(const std::vector<Eigen::Vector3d> & _boundary) {boundary_ = _boundary;}
+  const std::vector<Eigen::Vector3d> & getBoundary() const {return boundary_;}
+  // Grow the observed extent with another observation's boundary. Walls (2-point boundaries)
+  // keep the two points farthest apart along the wall; other shapes keep the first boundary.
+  void extendBoundary(const std::vector<Eigen::Vector3d> & _boundary)
+  {
+    if (_boundary.size() < 2) {return;}
+    if (boundary_.size() < 2) {
+      boundary_ = _boundary;
+      return;
+    }
+    if (boundary_.size() != 2 || _boundary.size() != 2) {return;}
+    // Direction along a vertical wall: horizontal, perpendicular to its normal.
+    Eigen::Vector3d along = vertex_->estimate().normal().cross(Eigen::Vector3d::UnitZ());
+    if (along.norm() < 1e-6) {return;}
+    along.normalize();
+    std::vector<Eigen::Vector3d> pts = {boundary_[0], boundary_[1], _boundary[0], _boundary[1]};
+    auto proj = [&](const Eigen::Vector3d & p) {return along.dot(p);};
+    auto lo = std::min_element(pts.begin(), pts.end(),
+        [&](const Eigen::Vector3d & a, const Eigen::Vector3d & b) {return proj(a) < proj(b);});
+    auto hi = std::max_element(pts.begin(), pts.end(),
+        [&](const Eigen::Vector3d & a, const Eigen::Vector3d & b) {return proj(a) < proj(b);});
+    boundary_ = {*lo, *hi};
+  }
 
 protected:
   std::string getNodeName() override {return node_name_;}
@@ -298,7 +327,7 @@ protected:
     if (_main) {
       return getVizColor();
     } else {
-      return getVizColor() * 0.5;
+      return tempGraphVizColor();
     }
   }
 
@@ -446,7 +475,7 @@ protected:
     if (_main) {
       return getVizColor();
     } else {
-      return getVizColor() * 0.5;
+      return tempGraphVizColor();
     }
   }
 
