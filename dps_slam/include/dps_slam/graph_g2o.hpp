@@ -107,6 +107,9 @@ public:
   // When true (default), every keyframe added from now on gets a HeightPriorEdge
   // pinning its z to raw odometry. See graph_edge_types.hpp.
   void setRestrictKeyframeHeightToOdometry(bool _restrict);
+  // Std (rad) of a prior keeping every plane landmark added from now on vertical
+  // (g2o_custom::EdgePlaneVertical); <= 0 disables it.
+  void setWallVerticalPriorStd(double _std_rad);
   std::shared_ptr<g2o::SparseOptimizer> graph_;  // g2o graph
 
   std::unordered_map<std::string, GraphNode *> obj_id2node_;
@@ -124,6 +127,7 @@ private:
   std::vector<GraphEdge *> graph_edges_;
   double robust_kernel_delta_ = 3.0;
   bool restrict_keyframe_height_to_odometry_ = true;
+  double wall_vertical_prior_std_rad_ = 0.0;
 };
 
 #endif  // AS2_SLAM__GRAPH_G2O_HPP_

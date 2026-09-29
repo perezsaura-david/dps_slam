@@ -42,6 +42,8 @@
 
 #include <Eigen/Core>
 #include "g2o/core/base_binary_edge.h"
+#include "g2o/core/base_unary_edge.h"
+#include <cmath>
 #include "g2o/types/slam3d/vertex_se3.h"
 #include "g2o/types/slam3d/vertex_pointxyz.h"
 #include "g2o/types/slam3d_addons/vertex_plane.h"
@@ -163,6 +165,27 @@ public:
     for (int i = 0; i < 4; ++i) {os << v[i] << " ";}
     return os.good();
   }
+};
+
+// Unary prior keeping a plane vertical: the error is the elevation of its normal (0 for a wall).
+// Wall landmarks come from 2D lines, so they are vertical by construction; without this the
+// optimizer can tip one over (seen: a wall drawn 11 m up, its plane turned near horizontal).
+class EdgePlaneVertical : public g2o::BaseUnaryEdge<1, double, g2o::VertexPlane>
+{
+public:
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+  EdgePlaneVertical() {setMeasurement(0.0);}
+
+  void computeError() override
+  {
+    const g2o::VertexPlane * plane = static_cast<const g2o::VertexPlane *>(_vertices[0]);
+    const Eigen::Vector3d n = plane->estimate().normal();
+    _error[0] = std::atan2(n.z(), n.head<2>().norm()) - _measurement;
+  }
+
+  bool read(std::istream & is) override {is >> _measurement; return true;}
+  bool write(std::ostream & os) const override {os << _measurement << " "; return os.good();}
 };
 
 }  // namespace g2o_custom

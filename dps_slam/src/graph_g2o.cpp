@@ -219,6 +219,11 @@ void GraphG2O::setRestrictKeyframeHeightToOdometry(bool _restrict)
   restrict_keyframe_height_to_odometry_ = _restrict;
 }
 
+void GraphG2O::setWallVerticalPriorStd(double _std_rad)
+{
+  wall_vertical_prior_std_rad_ = _std_rad;
+}
+
 void GraphG2O::addEdge(GraphEdge & _edge)
 {
   int id = n_edges_++;
@@ -300,8 +305,27 @@ void GraphG2O::addNewObjectDetection(
 
     obj_id2node_[_object_detection->getId()] = object_node;
     FLAG_GRAPH("Added new object ID: " << _object_detection->getId());
+
+    auto * new_plane = dynamic_cast<GraphNodePlane *>(object_node);
+    if (new_plane && wall_vertical_prior_std_rad_ > 0.0) {
+      // Keep the wall vertical. Added straight to the g2o graph (no GraphEdge wrapper, so
+      // it is not drawn) and with no robust kernel: it is a hard fact, not an observation.
+      auto * vertical = new g2o_custom::EdgePlaneVertical();
+      vertical->setId(n_edges_++);
+      vertical->setVertex(0, new_plane->getVertexPlane());
+      Eigen::Matrix<double, 1, 1> information;
+      information(0, 0) = 1.0 / (wall_vertical_prior_std_rad_ * wall_vertical_prior_std_rad_);
+      vertical->setInformation(information);
+      graph_->addEdge(vertical);
+    }
   } else {
-    // INFO_GRAPH("Already detected object ID: " << _object_detection->getId());
+    // Already known: grow a plane's drawn extent with this observation's, so it covers
+    // everything seen of it rather than only its first sighting.
+    auto * plane_node = dynamic_cast<GraphNodePlane *>(object_node);
+    auto * plane_detection = dynamic_cast<ObjectDetectionPlane *>(_object_detection);
+    if (plane_node && plane_detection) {
+      plane_node->extendBoundary(plane_detection->getNodeBoundary());
+    }
   }
   if (_object_detection == nullptr) {
     return;
