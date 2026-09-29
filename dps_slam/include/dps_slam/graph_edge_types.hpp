@@ -142,7 +142,7 @@ protected:
     if (_main) {
       return getVizColor();
     } else {
-      return getVizColor() * 0.5;
+      return tempGraphVizColor();
     }
   }
 
@@ -237,7 +237,7 @@ protected:
     if (_main) {
       return getVizColor();
     } else {
-      return getVizColor() * 0.5;
+      return tempGraphVizColor();
     }
   }
   // g2o_custom::EdgeSE3Point3D * edge_;
@@ -289,14 +289,16 @@ public:
     edge_marker_msg.color.b = color[2];
     edge_marker_msg.color.a = color[3];
 
-    // Line from the robot pose to the plane's closest point to the origin.
+    // Line from the robot pose to its foot on the observed plane (the plane's closest point to
+    // the origin, used before, sent every line to a spot that can be far from the wall).
     g2o::VertexSE3 * node_se3 = dynamic_cast<g2o::VertexSE3 *>(getEdge()->vertices()[0]);
     g2o::VertexPlane * node_plane = dynamic_cast<g2o::VertexPlane *>(getEdge()->vertices()[1]);
     if (!node_se3) {DEBUG("Node SE3 not found");}
     if (!node_plane) {DEBUG("Node Plane not found");}
     Eigen::Vector3d se3_position = node_se3->estimate().translation();
     g2o::Plane3D plane = node_plane->estimate();
-    Eigen::Vector3d plane_position = plane.normal() * plane.distance();
+    Eigen::Vector3d plane_position =
+      se3_position - (plane.normal().dot(se3_position) - plane.distance()) * plane.normal();
     for (const auto & position : {se3_position, plane_position}) {
       geometry_msgs::msg::Point point;
       point.x = position.x();
@@ -319,14 +321,15 @@ protected:
     if (_main) {
       return getVizColor();
     } else {
-      return getVizColor() * 0.5;
+      return tempGraphVizColor();
     }
   }
 
   g2o_custom::EdgeSE3Plane3D * edge_;
   std::string element_name_ = "edge";
   std::string edge_name_ = "Plane";
-  Eigen::Vector4d viz_color_ = {1.0, 0.65, 0.0, 1.0};
+  // Translucent: there are hundreds of these, they would bury the walls themselves.
+  Eigen::Vector4d viz_color_ = {1.0, 0.65, 0.0, 0.25};
 };
 
 class ArucoEdge : public GraphEdgeSE3
@@ -449,7 +452,7 @@ protected:
     if (_main) {
       return getVizColor();
     } else {
-      return getVizColor() * 0.5;
+      return tempGraphVizColor();
     }
   }
 
