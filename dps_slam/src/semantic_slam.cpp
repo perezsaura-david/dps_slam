@@ -805,6 +805,7 @@ void SemanticSlam::visualizeTempGraph()
   optimizer_ptr_->graph_mutex_.lock();
   if (!optimizer_ptr_->temp_graph) {
     WARN("Temp graph not created yet");
+    optimizer_ptr_->graph_mutex_.unlock();  // returning with it held deadlocked the next locker
     return;
   }
   visualization_msgs::msg::MarkerArray viz_odom_nodes_msg =
@@ -921,13 +922,13 @@ OptimizerG2OParameters SemanticSlam::getOptimizerParameters() {
   } else {
     optimizer_params.robust_kernel_delta = 3.0;
   }
-  if (this->has_parameter("odom_covariance_floor_translation")) {
-    optimizer_params.odom_covariance_floor_translation =
-      this->get_parameter("odom_covariance_floor_translation").as_double();
+  if (this->has_parameter("odom_covariance_floor")) {
+    optimizer_params.odom_covariance_floor =
+      this->get_parameter("odom_covariance_floor").as_double();
   }
-  if (this->has_parameter("odom_covariance_floor_rotation")) {
-    optimizer_params.odom_covariance_floor_rotation =
-      this->get_parameter("odom_covariance_floor_rotation").as_double();
+  if (this->has_parameter("wall_vertical_prior_std_deg")) {
+    optimizer_params.wall_vertical_prior_std_deg =
+      this->get_parameter("wall_vertical_prior_std_deg").as_double();
   }
 
   double earth_to_map_x = 0.0;

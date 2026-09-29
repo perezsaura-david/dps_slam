@@ -71,9 +71,10 @@ struct OptimizerG2OParameters
   bool throttle_detections;
   bool use_dual_graph;
   double robust_kernel_delta;  // Huber delta applied to every graph edge
-  // Minimum variance of each odometry edge DOF (m^2 for x/y/z, rad^2 for roll/pitch/yaw).
-  double odom_covariance_floor_translation = 1e-4;
-  double odom_covariance_floor_rotation = 1e-4;
+  // Minimum variance of every odometry edge DOF (m^2 / rad^2).
+  double odom_covariance_floor = 1e-4;
+  // Std (deg) of a prior keeping every wall (plane) landmark vertical; <= 0 disables it.
+  double wall_vertical_prior_std_deg = 0.0;
   Eigen::Isometry3d earth_to_map_transform;
   std::vector<FixedObject> fixed_objects;
 };
@@ -140,6 +141,13 @@ private:
   OdometryWithCovariance last_detection_odometry_added_;
   Eigen::Isometry3d map_odom_tranform_;
   Eigen::Isometry3d earth_map_transform_;
+  // Copies of the two transforms above for readers that must not wait out an optimization
+  // (the 100 Hz TF timer, the corrected-pose publisher): graph_mutex_ is held for the whole
+  // optimize, which takes hundreds of ms on a large graph.
+  std::mutex transform_cache_mutex_;
+  Eigen::Isometry3d cached_map_odom_ = Eigen::Isometry3d::Identity();
+  Eigen::Isometry3d cached_earth_map_ = Eigen::Isometry3d::Identity();
+  void storeTransformCache();
   Eigen::Isometry3d initial_earth_to_map_transform_;
   Eigen::MatrixXd main_graph_object_covariance;
 
@@ -157,8 +165,8 @@ private:
   bool throttle_detections_ = true;
   bool use_dual_graph_ = true;
   double robust_kernel_delta_ = 3.0;
-  double odom_covariance_floor_translation_ = 1e-4;
-  double odom_covariance_floor_rotation_ = 1e-4;
+  double odom_covariance_floor_ = 1e-4;
+  double wall_vertical_prior_std_rad_ = 0.0;
   std::vector<FixedObject> fixed_objects_;
   std::unordered_set<std::string> detections_since_last_keyframe_;
   CsvLogger * csv_logger_ = nullptr;

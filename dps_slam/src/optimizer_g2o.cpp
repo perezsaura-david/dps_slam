@@ -120,16 +120,11 @@ bool OptimizerG2O::generateOdometryInfo(
     // near-zero for a DOF that hasn't grown much since the last keyframe. That DOF's
     // information (this matrix's inverse, taken with no clamping in addNewKeyframe)
     // then blows up, making the odometry edge near-rigid on that axis and fighting
-    // any wall-driven correction hard enough to destabilize the optimizer. Floor it,
-    // separately for translation and rotation: the rotation floor sets how far the
-    // graph may bend the odometry heading per keyframe (1e-4 rad^2 = 0.57 deg, fine for
-    // a drifting odometry; a good LIO is ~0.06 deg, i.e. 1e-6).
-    _odometry_info.covariance_matrix.diagonal().head<3>() =
-      _odometry_info.covariance_matrix.diagonal().head<3>().cwiseMax(
-      odom_covariance_floor_translation_);
-    _odometry_info.covariance_matrix.diagonal().tail<3>() =
-      _odometry_info.covariance_matrix.diagonal().tail<3>().cwiseMax(
-      odom_covariance_floor_rotation_);
+    // any wall-driven correction hard enough to destabilize the optimizer. Floor it
+    // (default 1e-4, the same floor walls use). Lower it when the odometry message itself
+    // carries a deliberate small covariance to be used as is (calculate_odom_covariance off).
+    _odometry_info.covariance_matrix.diagonal() =
+      _odometry_info.covariance_matrix.diagonal().cwiseMax(odom_covariance_floor_);
   }
   _odometry_info.map_ref = initial_earth_to_map_transform_.inverse() * _odometry_info.odom_ref;
   // _odometry_info.map_ref = earth_map_transform_ * _odometry_info.odom_ref;
@@ -287,8 +282,11 @@ bool OptimizerG2O::handleNewOdom(
                       << "," << main_graph->graph_->vertices().size()
                       << "," << main_graph->graph_->edges().size() << std::endl;
             if (cov_matrix.size() == 0) { continue; }
+            // Carry the observed extent along: without it the main-graph plane has no
+            // boundary and is drawn as a 2x2 m slab at its closest point to the map origin,
+            // i.e. a wall far away from where it was seen.
             object_detection = new ObjectDetectionPlane(
-              object.first, plane, cov_matrix, true);
+              object.first, plane, cov_matrix, true, plane_node->getBoundary());
           }
 
           if (!object_detection) { continue; }
@@ -321,6 +319,7 @@ bool OptimizerG2O::handleNewOdom(
     temp_graph = std::make_shared<GraphG2O>("Temp Graph");
     temp_graph->setRobustKernelDelta(robust_kernel_delta_);
     temp_graph->setRestrictKeyframeHeightToOdometry(restrict_map_odom_correction_to_xy_yaw_);
+    temp_graph->setWallVerticalPriorStd(wall_vertical_prior_std_rad_);
     temp_graph_generated_ = false;
   }
   graph_mutex_.unlock();
@@ -458,18 +457,21 @@ void OptimizerG2O::setParameters(const OptimizerG2OParameters & _params)
   initial_earth_to_map_transform_ = _params.earth_to_map_transform;
   map_odom_transform_alpha_ = _params.map_odom_transform_alpha;
   earth_map_transform_ = initial_earth_to_map_transform_;
+  storeTransformCache();
   calculate_odom_covariance_ = _params.calculate_odom_covariance_;
   restrict_map_odom_correction_to_xy_yaw_ = _params.restrict_map_odom_correction_to_xy_yaw;
   throttle_detections_ = _params.throttle_detections;
   use_dual_graph_ = _params.use_dual_graph;
   robust_kernel_delta_ = _params.robust_kernel_delta;
-  odom_covariance_floor_translation_ = _params.odom_covariance_floor_translation;
-  odom_covariance_floor_rotation_ = _params.odom_covariance_floor_rotation;
+  odom_covariance_floor_ = _params.odom_covariance_floor;
+  wall_vertical_prior_std_rad_ = _params.wall_vertical_prior_std_deg * M_PI / 180.0;
   main_graph->setRobustKernelDelta(robust_kernel_delta_);
   main_graph->setRestrictKeyframeHeightToOdometry(restrict_map_odom_correction_to_xy_yaw_);
+  main_graph->setWallVerticalPriorStd(wall_vertical_prior_std_rad_);
   if (temp_graph) {
     temp_graph->setRobustKernelDelta(robust_kernel_delta_);
     temp_graph->setRestrictKeyframeHeightToOdometry(restrict_map_odom_correction_to_xy_yaw_);
+    temp_graph->setWallVerticalPriorStd(wall_vertical_prior_std_rad_);
   }
 
   PARAM(PRINT_VAR(main_graph_odometry_distance_threshold_));
@@ -480,8 +482,8 @@ void OptimizerG2O::setParameters(const OptimizerG2OParameters & _params)
   PARAM(PRINT_VAR(restrict_map_odom_correction_to_xy_yaw_));
   PARAM(PRINT_VAR(use_dual_graph_));
   PARAM(PRINT_VAR(robust_kernel_delta_));
-  PARAM(PRINT_VAR(odom_covariance_floor_translation_));
-  PARAM(PRINT_VAR(odom_covariance_floor_rotation_));
+  PARAM(PRINT_VAR(odom_covariance_floor_));
+  PARAM(PRINT_VAR(wall_vertical_prior_std_rad_));
 
   // Anchor edge for absolute orientation; keep yaw as tight as the other axes so the
   // whole graph can't rotate freely with accumulating odometry drift.
@@ -503,8 +505,25 @@ void OptimizerG2O::setParameters(const OptimizerG2OParameters & _params)
 
 void OptimizerG2O::updateOdomMapTransform()
 {
-  std::lock_guard<std::mutex> lock(graph_mutex_);
+  // Called by the TF timer. Every optimization already recomputes the transforms (under the
+  // lock, from the optimized graph). Recomputing here too is only needed to step the alpha
+  // filter, and is unsafe: handleNewOdom updates last_odometry_added_ and adds the new,
+  // not yet optimized keyframe outside the lock, so a tick in between pairs the old node
+  // with the new odometry and publishes a map->odom off by the whole rotation since the
+  // last keyframe (seen: -88 deg for ~130 ms after a 90 deg turn).
+  if (map_odom_transform_alpha_ >= 1.0) {return;}
+  // If an optimization holds the graph, skip: the cached transforms stay valid until it
+  // finishes (and it refreshes them itself).
+  std::unique_lock<std::mutex> lock(graph_mutex_, std::try_to_lock);
+  if (!lock.owns_lock()) {return;}
   updateOdomMapTransformLocked();
+}
+
+void OptimizerG2O::storeTransformCache()
+{
+  std::lock_guard<std::mutex> lock(transform_cache_mutex_);
+  cached_map_odom_ = map_odom_tranform_;
+  cached_earth_map_ = earth_map_transform_;
 }
 
 void OptimizerG2O::updateOdomMapTransformLocked()
@@ -539,6 +558,7 @@ void OptimizerG2O::updateOdomMapTransformLocked()
   else {
     map_odom_tranform_ = new_map_odom_tranform;
   }
+  storeTransformCache();
 }
 
 Eigen::Isometry3d OptimizerG2O::filterTransform(Eigen::Isometry3d _last_transform, Eigen::Isometry3d _new_transform) {
@@ -570,14 +590,14 @@ Eigen::Isometry3d OptimizerG2O::getOptimizedMapPose()
 
 Eigen::Isometry3d OptimizerG2O::getMapOdomTransform()
 {
-  std::lock_guard<std::mutex> lock(graph_mutex_);
-  return map_odom_tranform_;
+  std::lock_guard<std::mutex> lock(transform_cache_mutex_);
+  return cached_map_odom_;
 }
 
 Eigen::Isometry3d OptimizerG2O::getMapTransform()
 {
-  std::lock_guard<std::mutex> lock(graph_mutex_);
-  return earth_map_transform_;
+  std::lock_guard<std::mutex> lock(transform_cache_mutex_);
+  return cached_earth_map_;
 }
 
 std::vector<Eigen::Isometry3d> OptimizerG2O::getMainGraphKeyframePoses()
