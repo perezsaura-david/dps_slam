@@ -168,9 +168,22 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 
+  find_package(ament_cmake_gtest REQUIRED)
+  # Pure-g2o unit tests (no ROS runtime): custom cylinder-axis vertex/edge.
+  set(TEST_SOURCE_CPP_FILES
+    tests/test_cylinder_axis.cpp
+    src/g2o_edge_types.cpp)
+
   if(TEST_SOURCE_CPP_FILES)
     ament_add_gtest(${PROJECT_NAME}_test ${TEST_SOURCE_CPP_FILES})
     ament_target_dependencies(${PROJECT_NAME}_test ${PROJECT_DEPENDENCIES})
+    target_link_libraries(${PROJECT_NAME}_test
+                          glog::glog
+                          ${G2O_CORE_LIBRARY}
+                          ${G2O_STUFF_LIBRARY}
+                          ${G2O_TYPES_SLAM3D}
+                          ${G2O_TYPES_SLAM3D_ADDONS}
+                          ${FMT_LIBRARIES})
   endif()
 endif()
 

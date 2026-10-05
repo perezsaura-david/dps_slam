@@ -332,6 +332,91 @@ protected:
   Eigen::Vector4d viz_color_ = {1.0, 0.65, 0.0, 0.25};
 };
 
+// Binary edge robot-pose -> cylinder-axis landmark. Measurement is the
+// [anchor(3); direction(3)] observed in the robot frame (see
+// g2o_custom::EdgeSE3CylinderAxis for the 5-DOF error definition).
+class CylinderEdge : public GraphEdge
+{
+public:
+  CylinderEdge(
+    GraphNodeSE3 * _node1,
+    GraphNodeCylinder * _node2,
+    const Eigen::Matrix<double, 6, 1> & _measurement,
+    const Eigen::MatrixXd & _information_matrix)
+  {
+    if (_information_matrix.size() == 0) {
+      WARN("Information Matrix Empty");
+    }
+    edge_ = new g2o_custom::EdgeSE3CylinderAxis();
+    edge_->setMeasurement(_measurement);
+    edge_->setInformation(_information_matrix);
+    edge_->vertices()[0] = _node1->getVertexSE3();
+    edge_->vertices()[1] = _node2->getVertexCylinder();
+  }
+  ~CylinderEdge() {}
+
+  g2o::HyperGraph::Edge * getEdge() override
+  {
+    return static_cast<g2o::HyperGraph::Edge *>(edge_);
+  }
+
+  g2o_custom::EdgeSE3CylinderAxis * getEdgeSE3Cylinder() {return edge_;}
+
+  visualization_msgs::msg::Marker getVizMarker(const bool _main) override
+  {
+    visualization_msgs::msg::Marker edge_marker_msg;
+    edge_marker_msg.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    edge_marker_msg.ns = getVizMarkerNamespace();
+    edge_marker_msg.id = edge_->id();
+    edge_marker_msg.scale.x = 0.02;  // Thickness
+    edge_marker_msg.scale.y = 0.02;  // Thickness
+    edge_marker_msg.scale.z = 0.02;  // Thickness
+    Eigen::Vector4d color = getVizMarkerColor(_main);
+    edge_marker_msg.color.r = color[0];
+    edge_marker_msg.color.g = color[1];
+    edge_marker_msg.color.b = color[2];
+    edge_marker_msg.color.a = color[3];
+
+    // Line from the robot pose to the cylinder-axis anchor.
+    g2o::VertexSE3 * node_se3 = dynamic_cast<g2o::VertexSE3 *>(getEdge()->vertices()[0]);
+    g2o_custom::VertexCylinderAxis * node_cyl =
+      dynamic_cast<g2o_custom::VertexCylinderAxis *>(getEdge()->vertices()[1]);
+    if (!node_se3) {DEBUG("Node SE3 not found");}
+    if (!node_cyl) {DEBUG("Node Cylinder not found");}
+    for (const auto & position :
+      {Eigen::Vector3d(node_se3->estimate().translation()), node_cyl->anchor()})
+    {
+      geometry_msgs::msg::Point point;
+      point.x = position.x();
+      point.y = position.y();
+      point.z = position.z();
+      edge_marker_msg.points.emplace_back(point);
+    }
+    return edge_marker_msg;
+  }
+
+protected:
+  std::string getEdgeName() override {return edge_name_;}
+  std::string getVizMarkerNamespace() override
+  {
+    return element_name_ + "/" + getEdgeName();
+  }
+  Eigen::Vector4d getVizColor() override {return viz_color_;}
+  Eigen::Vector4d getVizMarkerColor(const bool _main) override
+  {
+    if (_main) {
+      return getVizColor();
+    } else {
+      return getVizColor() * 0.5;
+    }
+  }
+
+  g2o_custom::EdgeSE3CylinderAxis * edge_;
+  std::string element_name_ = "edge";
+  std::string edge_name_ = "Cylinder";
+  Eigen::Vector4d viz_color_ = {1.0, 0.0, 1.0, 1.0};
+};
+
 class ArucoEdge : public GraphEdgeSE3
 {
 public:

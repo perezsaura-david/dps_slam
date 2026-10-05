@@ -97,6 +97,7 @@ public:
   Eigen::MatrixXd computeNodeCovariance(GraphNode * _node);
 
   bool optimizeGraph();
+  void reportNanEdges();
   void setFixedObjects(const std::vector<FixedObject> & _fixed_objects);
   void initGraph(const Eigen::Isometry3d & _initial_pose = Eigen::Isometry3d::Identity());
   // Huber delta applied to every edge added from now on (addEdge()). Without a robust

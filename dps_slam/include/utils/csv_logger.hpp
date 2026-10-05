@@ -38,6 +38,7 @@ class CsvLogger
 {
 public:
   explicit CsvLogger(const std::string & output_dir = ".")
+  : output_dir_(output_dir)
   {
     odom_file_ = fopen((output_dir + "/slam_odom.csv").c_str(), "w");
     keyframe_file_ = fopen((output_dir + "/slam_keyframes.csv").c_str(), "w");
@@ -82,6 +83,8 @@ public:
     if (merge_file_) { fclose(merge_file_); }
     if (fixed_file_) { fclose(fixed_file_); }
   }
+
+  const std::string & outputDir() const {return output_dir_;}
 
   CsvLogger(const CsvLogger &) = delete;
   CsvLogger & operator=(const CsvLogger &) = delete;
@@ -193,6 +196,7 @@ private:
   FILE * fixed_file_ = nullptr;
   int odom_counter_ = 0;
   static constexpr int ODOM_LOG_EVERY_N = 10;
+  std::string output_dir_;
 };
 
 #endif  // UTILS__CSV_LOGGER_HPP_

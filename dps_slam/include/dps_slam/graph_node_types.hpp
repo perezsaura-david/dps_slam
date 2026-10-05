@@ -53,6 +53,7 @@
 #include <vector>
 
 #include <visualization_msgs/msg/marker.hpp>
+#include "g2o/g2o_edge_types.hpp"
 #include "utils/conversions.hpp"
 
 // Every temp-graph element is drawn in this one translucent cyan, so the short-lived temp graph
@@ -483,6 +484,103 @@ protected:
   std::string element_name_ = "node";
   std::string node_name_ = "SE3";
   Eigen::Vector4d viz_color_ = {1.0, 1.0, 1.0, 1.0};
+  Eigen::MatrixXd cov_matrix_;
+};
+
+// Cylinder-axis landmark node: 5-DOF state [anchor(3); direction(3, unit)]
+// (anchor = cylinder TOP on the axis). Radius/height are NOT optimized -- they
+// are kept as running averages of the measured dimensions, used only for the
+// RViz marker and for republishing the landmark.
+class GraphNodeCylinder : public GraphNode
+{
+public:
+  GraphNodeCylinder(
+    const Eigen::Matrix<double, 6, 1> & _state, const double _radius, const double _height)
+  : radius_avg_(_radius), height_avg_(_height)
+  {
+    vertex_ = new g2o_custom::VertexCylinderAxis();
+    vertex_->setEstimate(_state);
+  }
+  ~GraphNodeCylinder() {}
+
+  g2o::HyperGraph::Vertex * getVertex() override
+  {
+    return static_cast<g2o::HyperGraph::Vertex *>(vertex_);
+  }
+
+  g2o_custom::VertexCylinderAxis * getVertexCylinder() {return vertex_;}
+
+  visualization_msgs::msg::Marker getVizMarker(const bool _main) override
+  {
+    // Draw the physical cylinder: the optimized state anchors the TOP, so the
+    // marker centre sits half the averaged height down the axis.
+    const Eigen::Vector3d anchor = getAnchor();
+    const Eigen::Vector3d dir = getDirection();
+    const double height = std::max(height_avg_, 0.1);
+    const Eigen::Vector3d center = anchor - dir * (height / 2.0);
+    const Eigen::Quaterniond q =
+      Eigen::Quaterniond::FromTwoVectors(Eigen::Vector3d::UnitZ(), dir);
+
+    visualization_msgs::msg::Marker node_marker_msg;
+    node_marker_msg.type = node_marker_msg.CYLINDER;
+    node_marker_msg.ns = getVizMarkerNamespace();
+    node_marker_msg.id = vertex_->id();
+    node_marker_msg.pose.position.x = center.x();
+    node_marker_msg.pose.position.y = center.y();
+    node_marker_msg.pose.position.z = center.z();
+    node_marker_msg.pose.orientation.x = q.x();
+    node_marker_msg.pose.orientation.y = q.y();
+    node_marker_msg.pose.orientation.z = q.z();
+    node_marker_msg.pose.orientation.w = q.w();
+    node_marker_msg.scale.x = std::max(radius_avg_ * 2.0, 0.05);
+    node_marker_msg.scale.y = std::max(radius_avg_ * 2.0, 0.05);
+    node_marker_msg.scale.z = height;
+    Eigen::Vector4d color = getVizMarkerColor(_main);
+    node_marker_msg.color.r = color[0];
+    node_marker_msg.color.g = color[1];
+    node_marker_msg.color.b = color[2];
+    node_marker_msg.color.a = color[3];
+    return node_marker_msg;
+  }
+
+  void setFixed() override {vertex_->setFixed(true);}
+  Eigen::Vector3d getAnchor() {return vertex_->anchor();}
+  Eigen::Vector3d getDirection() {return vertex_->direction();}
+  double getRadius() {return radius_avg_;}
+  double getHeight() {return height_avg_;}
+  void updateDimensions(const double _radius, const double _height)
+  {
+    n_dim_obs_++;
+    const double alpha = 1.0 / static_cast<double>(n_dim_obs_);
+    radius_avg_ += (_radius - radius_avg_) * alpha;
+    height_avg_ += (_height - height_avg_) * alpha;
+  }
+  void setCovariance(const Eigen::MatrixXd & _cov_matrix) {cov_matrix_ = _cov_matrix;}
+  Eigen::MatrixXd getCovariance() {return cov_matrix_;}
+
+protected:
+  std::string getNodeName() override {return node_name_;}
+  std::string getVizMarkerNamespace() override
+  {
+    return element_name_ + "/" + getNodeName();
+  }
+  Eigen::Vector4d getVizColor() override {return viz_color_;}
+  Eigen::Vector4d getVizMarkerColor(const bool _main) override
+  {
+    if (_main) {
+      return getVizColor();
+    } else {
+      return getVizColor() * 0.5;
+    }
+  }
+
+  g2o_custom::VertexCylinderAxis * vertex_;
+  double radius_avg_ = 0.0;
+  double height_avg_ = 0.0;
+  int n_dim_obs_ = 1;
+  std::string element_name_ = "node";
+  std::string node_name_ = "Cylinder";
+  Eigen::Vector4d viz_color_ = {1.0, 0.0, 1.0, 1.0};
   Eigen::MatrixXd cov_matrix_;
 };
 

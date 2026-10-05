@@ -36,6 +36,8 @@
  */
 
 #include "dps_slam/graph_g2o.hpp"
+#include <typeinfo>
+#include <sstream>
 
 #include <Eigen/src/Core/Matrix.h>
 #include <Eigen/src/Core/util/IndexedViewHelper.h>
@@ -173,9 +175,15 @@ bool GraphG2O::optimizeGraph()
   graph_->initializeOptimization();
   graph_->setVerbose(false);
 
+  // chi2() sums the error vectors the edges currently hold; initializeOptimization()
+  // does not fill them, so on an edge added since the last optimization it reads an
+  // uninitialized vector. Compute the errors first, or the check below fires on
+  // garbage rather than on the graph.
+  graph_->computeActiveErrors();
   double chi2 = graph_->chi2();
   if (std::isnan(chi2)) {
     ERROR_GRAPH("GRAPH RETURNED A NAN BEFORE OPTIMIZATION");
+    reportNanEdges();
     // return false;
   }
   // std::cout << "Start optimization" << std::endl;
@@ -192,6 +200,42 @@ bool GraphG2O::optimizeGraph()
   }
   DEBUG_LOG_DURATION_GRAPH
   return true;
+}
+
+// Diagnostic for the NaN chi2 above: name the edges responsible, so a
+// non-finite information matrix or a non-finite estimate can be traced to the
+// measurement that produced it instead of being reported as an anomaly.
+void GraphG2O::reportNanEdges()
+{
+  int reported = 0;
+  for (auto * hedge : graph_->edges()) {
+    auto * e = dynamic_cast<g2o::OptimizableGraph::Edge *>(hedge);
+    if (e == nullptr) {continue;}
+    e->computeError();
+    const int d = e->dimension();
+    const double * info = e->informationData();
+    bool info_bad = false;
+    for (int i = 0; info != nullptr && i < d * d; ++i) {
+      if (!std::isfinite(info[i])) {info_bad = true; break;}
+    }
+    const bool chi_bad = !std::isfinite(e->chi2());
+    if (!info_bad && !chi_bad) {continue;}
+    std::ostringstream os;
+    os << "NAN SOURCE edge id=" << e->id() << " type=" << typeid(*e).name()
+       << " dim=" << d << " chi2=" << e->chi2()
+       << " info_finite=" << (info_bad ? 0 : 1) << " info_diag=[";
+    for (int i = 0; info != nullptr && i < d; ++i) {
+      os << info[i * d + i] << " ";
+    }
+    os << "] vertices=[";
+    for (auto * hv : e->vertices()) {
+      auto * v = dynamic_cast<g2o::OptimizableGraph::Vertex *>(hv);
+      os << (v ? v->id() : -1) << " ";
+    }
+    os << "]";
+    ERROR_GRAPH(os.str());
+    if (++reported >= 3) {break;}
+  }
 }
 
 void GraphG2O::addNode(GraphNode & _node)
@@ -366,6 +410,10 @@ Eigen::MatrixXd GraphG2O::computeNodeCovariance(GraphNode * _node)
   auto node_plane = dynamic_cast<g2o::VertexPlane *>(_node->getVertex());
   if (node_plane) {
     graph_->computeMarginals(spinv, node_plane);
+  }
+  auto node_cylinder = dynamic_cast<g2o_custom::VertexCylinderAxis *>(_node->getVertex());
+  if (node_cylinder) {
+    graph_->computeMarginals(spinv, node_cylinder);
   }
   // WARN_GRAPH("COVARIANCE\n" << spinv);
 

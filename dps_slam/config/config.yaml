@@ -44,7 +44,7 @@
     detection_covariance_factor: 0.1
     detection_orientation_covariance_factor: 1.0
     throttle_detections: true
-    use_dual_graph: false
+    use_dual_graph: true
     force_object_type: "aruco"
     fixed_objects:
       gate_1:
